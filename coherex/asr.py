@@ -15,6 +15,12 @@ logger = get_logger(__name__)
 
 DEFAULT_MODEL = "CohereLabs/cohere-transcribe-03-2026"
 
+# Fallback language set used by the vLLM backend, which cannot read the model
+# config locally. Matches the base Cohere Transcribe model.
+DEFAULT_SUPPORTED_LANGUAGES = [
+    "en", "fr", "de", "es", "it", "pt", "nl", "pl", "el", "ar", "ja", "zh", "vi", "ko",
+]
+
 
 @dataclass
 class CohereAsrOptions:
@@ -43,6 +49,7 @@ class CohereAsrPipeline:
         device: Union[str, torch.device],
         language: Optional[str] = None,
         batch_size: int = 8,
+        backend=None,
     ):
         self.model = model
         self.processor = processor
@@ -51,11 +58,15 @@ class CohereAsrPipeline:
         self.options = options
         self.preset_language = language
         self.batch_size = batch_size
+        self.backend = backend
         if isinstance(device, torch.device):
             self.device = device
         else:
             self.device = torch.device(device)
-        self.supported_languages = list(getattr(model.config, "supported_languages", []))
+        if backend is not None:
+            self.supported_languages = list(backend.supported_languages)
+        else:
+            self.supported_languages = list(getattr(model.config, "supported_languages", []))
 
     def _validate_language(self, language: Optional[str]) -> str:
         if language is None:
@@ -73,6 +84,8 @@ class CohereAsrPipeline:
 
     def transcribe_batch(self, waveforms: List[np.ndarray], language: str) -> List[str]:
         """Transcribe a batch of ≤chunk_size-second waveform slices in one forward pass."""
+        if self.backend is not None:
+            return self.backend.transcribe_batch(waveforms, language)
         inputs = self.processor(
             waveforms,
             sampling_rate=SAMPLE_RATE,
@@ -162,6 +175,11 @@ class CohereAsrPipeline:
 
         return {"segments": segments, "language": language}
 
+    def shutdown(self):
+        """Release the ASR backend. Stops a vLLM server if CohereX started one."""
+        if self.backend is not None:
+            self.backend.shutdown()
+
 
 def _resolve_dtype(compute_type: str, device: str) -> torch.dtype:
     if compute_type == "default":
@@ -192,6 +210,10 @@ def load_model(
     download_root: Optional[str] = None,
     local_files_only: bool = False,
     use_auth_token: Optional[Union[str, bool]] = None,
+    backend: str = "local",
+    vllm_url: Optional[str] = None,
+    vllm_api_key: Optional[str] = None,
+    vllm_args: Optional[List[str]] = None,
 ) -> CohereAsrPipeline:
     """Load the Cohere Transcribe model for inference.
 
@@ -209,27 +231,44 @@ def load_model(
         download_root: Cache directory for model files.
         local_files_only: Use only cached files, do not download.
         use_auth_token: HuggingFace token for the gated Cohere model.
+        backend: 'local' runs the model in-process; 'vllm' offloads transcription
+            to a vLLM server.
+        vllm_url: URL of a running vLLM server. If None with backend='vllm',
+            CohereX starts (and later stops) its own vLLM server.
+        vllm_api_key: API key for the vLLM server, if it requires one.
+        vllm_args: Extra 'vllm serve' arguments used when CohereX launches its
+            own server (e.g. ['--max-model-len', '448']).
 
     Returns:
         A CohereAsrPipeline.
     """
-    dtype = _resolve_dtype(compute_type, device)
-    target_device = f"cuda:{device_index}" if device == "cuda" else device
+    remote_backend = None
+    if backend == "vllm":
+        remote_backend = _build_vllm_backend(model_name, vllm_url, vllm_api_key, vllm_args)
+        model = None
+        processor = None
+    elif backend == "local":
+        dtype = _resolve_dtype(compute_type, device)
+        target_device = f"cuda:{device_index}" if device == "cuda" else device
 
-    processor = AutoProcessor.from_pretrained(
-        model_name,
-        cache_dir=download_root,
-        local_files_only=local_files_only,
-        token=use_auth_token,
-    )
-    model = CohereAsrForConditionalGeneration.from_pretrained(
-        model_name,
-        torch_dtype=dtype,
-        cache_dir=download_root,
-        local_files_only=local_files_only,
-        token=use_auth_token,
-    ).to(target_device)
-    model.eval()
+        processor = AutoProcessor.from_pretrained(
+            model_name,
+            cache_dir=download_root,
+            local_files_only=local_files_only,
+            token=use_auth_token,
+        )
+        model = CohereAsrForConditionalGeneration.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+            cache_dir=download_root,
+            local_files_only=local_files_only,
+            token=use_auth_token,
+        ).to(target_device)
+        model.eval()
+    else:
+        raise ValueError(f"Invalid backend: {backend!r}. Choose 'local' or 'vllm'.")
+
+    target_device = f"cuda:{device_index}" if device == "cuda" else device
 
     default_asr_options = {"punctuation": True, "max_new_tokens": 256}
     if asr_options is not None:
@@ -265,4 +304,28 @@ def load_model(
         device=target_device,
         language=language,
         batch_size=batch_size,
+        backend=remote_backend,
+    )
+
+
+def _build_vllm_backend(model_name, vllm_url, vllm_api_key, vllm_args):
+    """Connect to a vLLM server, or start one if no URL is given."""
+    from coherex.vllm_backend import ManagedVLLMServer, VLLMBackend
+
+    if vllm_url:
+        logger.info(f"Using vLLM backend at {vllm_url}")
+        return VLLMBackend(
+            base_url=vllm_url,
+            model=model_name,
+            api_key=vllm_api_key,
+            supported_languages=DEFAULT_SUPPORTED_LANGUAGES,
+        )
+
+    server = ManagedVLLMServer(model_name, api_key=vllm_api_key, extra_args=vllm_args).start()
+    return VLLMBackend(
+        base_url=server.base_url,
+        model=model_name,
+        api_key=vllm_api_key,
+        supported_languages=DEFAULT_SUPPORTED_LANGUAGES,
+        server=server,
     )

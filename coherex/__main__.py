@@ -33,6 +33,12 @@ def cli():
     parser.add_argument("--batch_size", default=8, type=int, help="the number of VAD chunks to transcribe per generate() call")
     parser.add_argument("--compute_type", default="default", type=str, choices=["default", "bfloat16", "float16", "float32"], help="compute type for computation; 'default' uses bfloat16 on GPU, float32 on CPU")
 
+    # backend / vLLM serving
+    parser.add_argument("--backend", type=str, default="local", choices=["local", "vllm"], help="ASR backend: 'local' runs the model in-process; 'vllm' offloads transcription to a vLLM server")
+    parser.add_argument("--vllm_url", type=str, default=None, help="URL of a running vLLM server (e.g. http://localhost:8000). If omitted with --backend vllm, CohereX starts its own vLLM server and stops it when finished")
+    parser.add_argument("--vllm_api_key", type=str, default=None, help="API key for the vLLM server, if it requires one (defaults to the VLLM_API_KEY env var)")
+    parser.add_argument("--vllm_args", type=str, default=None, help="extra arguments passed to 'vllm serve' when CohereX launches its own server, e.g. \"--max-model-len 448 --gpu-memory-utilization 0.8\"")
+
     parser.add_argument("--output_dir", "-o", type=str, default=".", help="directory to save the outputs")
     parser.add_argument("--output_format", "-f", type=str, default="all", choices=["all", "srt", "vtt", "txt", "tsv", "json", "aud"], help="format of the output file; if not specified, all available formats will be produced")
     parser.add_argument("--verbose", type=str2bool, default=True, help="whether to print out the progress and debug messages")

@@ -48,6 +48,12 @@ For automatic language detection, include the optional extra:
 pip install "coherex[langid]"
 ```
 
+To enable everything (language detection and the vLLM backend), use:
+
+```bash
+pip install "coherex[all]"
+```
+
 To work from source instead:
 
 ```bash
@@ -111,6 +117,27 @@ CohereX reads the supported languages from the model itself, so `--language` is 
 against whatever the chosen model accepts (`en`, `ar` for the Arabic model), and
 `--language auto` only probes those.
 
+## Serving with vLLM
+
+By default the ASR model runs in-process (`--backend local`). For higher throughput you can
+run transcription on a [vLLM](https://docs.vllm.ai) server instead (`pip install "coherex[vllm]"`).
+Alignment and diarization still run locally either way.
+
+Point CohereX at a server you already run:
+
+```bash
+coherex audio.mp3 --language en --backend vllm --vllm_url http://localhost:8000
+```
+
+Or let CohereX start its own vLLM server and shut it down automatically when the run finishes:
+
+```bash
+coherex audio.mp3 --language en --backend vllm
+```
+
+Add `--vllm_api_key` if the server requires one, and `--vllm_args` to pass extra
+`vllm serve` flags (e.g. `--vllm_args "--gpu-memory-utilization 0.8"`).
+
 ## Common options
 
 | Option | Default | Description |
@@ -123,6 +150,7 @@ against whatever the chosen model accepts (`en`, `ar` for the Arabic model), and
 | `--batch_size` | `8` | VAD chunks per forward pass. Helps on GPU; use `1` on CPU. |
 | `--vad_method` | `pyannote` | `pyannote` or `silero`. |
 | `--chunk_size` | `30` | Max seconds per VAD chunk. Keep below 35. |
+| `--backend` | `local` | `local` (in-process) or `vllm` (see [Serving with vLLM](#serving-with-vllm)). |
 | `--output_format` / `-f` | `all` | `srt`, `vtt`, `txt`, `tsv`, `json`, `aud`, or `all`. |
 | `--output_dir` / `-o` | `.` | Where to write outputs. |
 | `--punctuation` | `true` | Set `false` for lower-cased output without punctuation. |

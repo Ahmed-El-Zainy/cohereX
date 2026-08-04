@@ -1,6 +1,7 @@
 import argparse
 import gc
 import os
+import shlex
 
 import torch
 
@@ -33,6 +34,11 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
     device_index: int = args.pop("device_index")
     compute_type: str = args.pop("compute_type")
     verbose: bool = args.pop("verbose")
+
+    backend: str = args.pop("backend")
+    vllm_url: str = args.pop("vllm_url")
+    vllm_api_key: str = args.pop("vllm_api_key") or os.environ.get("VLLM_API_KEY")
+    vllm_args_raw: str = args.pop("vllm_args")
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -101,6 +107,10 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
         download_root=model_dir,
         local_files_only=model_cache_only,
         use_auth_token=hf_token,
+        backend=backend,
+        vllm_url=vllm_url,
+        vllm_api_key=vllm_api_key,
+        vllm_args=shlex.split(vllm_args_raw) if vllm_args_raw else None,
     )
 
     results = []
@@ -123,7 +133,8 @@ def transcribe_task(args: dict, parser: argparse.ArgumentParser):
         )
         results.append((result, audio_path, detected))
 
-    # Unload ASR model and VAD
+    # Unload ASR model / VAD, and stop the vLLM server if CohereX started one.
+    model.shutdown()
     del model
     gc.collect()
     if device == "cuda":
