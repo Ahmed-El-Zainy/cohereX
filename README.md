@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/bakrianoo/cohereX/main/coherex/assets/images/logo-coherex.png" alt="CohereX" width="420">
+  <img src="coherex/assets/images/logo-coherex.png" alt="CohereX" width="420">
 </p>
 
 # CohereX
