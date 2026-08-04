@@ -2,6 +2,10 @@
   <img src="coherex/assets/images/logo-coherex.png" alt="CohereX" width="420">
 </p>
 
+<p align="center">
+  <a href="https://colab.research.google.com/github/bakrianoo/cohereX/blob/main/notebooks/coherex_colab.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
+</p>
+
 # CohereX
 
 Speech transcription with word-level timestamps and speaker diarization, built on the
