@@ -134,7 +134,7 @@ Point CohereX at a server you already run:
 coherex audio.mp3 --language en --backend vllm --vllm_url http://localhost:8000
 ```
 
-Or let CohereX start its own vLLM server and shut it down automatically when the run finishes:
+Or let **CohereX start its own vLLM** server and shut it down automatically when the run finishes:
 
 ```bash
 coherex audio.mp3 --language en --backend vllm
