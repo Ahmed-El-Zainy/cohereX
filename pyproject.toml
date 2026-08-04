@@ -1,0 +1,59 @@
+[project]
+authors = [{ name = "CohereX" }]
+name = "coherex"
+version = "0.1.0"
+description = "Time-Accurate Automatic Speech Recognition using Cohere Transcribe, with word-level timestamps and speaker diarization."
+readme = "README.md"
+requires-python = ">=3.10, <3.14"
+license = { text = "Apache-2.0" }
+keywords = ["asr", "speech-recognition", "transcription", "diarization", "timestamps", "cohere", "subtitles"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "transformers>=5.4.0",
+    "accelerate>=0.28.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "sentencepiece>=0.2.0",
+    "protobuf>=4.0.0",
+    "nltk>=3.9.1",
+    "numpy>=2.1.0",
+    "omegaconf>=2.3.0",
+    "pandas>=2.2.3",
+    "pyannote-audio>=4.0.0",
+    "huggingface-hub>=0.28.1",
+    "torch>=2.8.0",
+    "torchaudio>=2.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/bakrianoo/cohereX"
+Repository = "https://github.com/bakrianoo/cohereX"
+Issues = "https://github.com/bakrianoo/cohereX/issues"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+langid = ["langdetect>=1.0.9"]
+
+[project.scripts]
+coherex = "coherex.__main__:cli"
+
+[build-system]
+requires = ["setuptools"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["coherex*"]
+
+[tool.setuptools.package-data]
+coherex = ["assets/*"]
