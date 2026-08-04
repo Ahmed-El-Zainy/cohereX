@@ -4,23 +4,27 @@
 
 # CohereX
 
-Speech transcription with word-level timestamps and speaker diarization, built on
-the [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
-ASR model.
+Speech transcription with word-level timestamps and speaker diarization, built on the
+[Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) ASR model.
 
 Cohere Transcribe produces accurate text but no timestamps, no speaker labels, and no
-language detection. CohereX adds those around it, following the same pipeline design as
-[WhisperX](https://github.com/m-bain/whisperX):
+language detection. CohereX adds those around it, reusing the
+[WhisperX](https://github.com/m-bain/whisperX) pipeline design.
+
+## Features
+
+- Word-level timestamps from wav2vec2 forced alignment
+- Speaker labels per word and segment (pyannote diarization)
+- Voice activity detection (pyannote or silero) that drops silence before transcription
+- 14 languages, with optional automatic detection
+- Output as SRT, VTT, TXT, TSV, or JSON
+- Runs the model in-process or offloads it to a vLLM server
+
+Pipeline:
 
 ```
 audio → VAD → Cohere Transcribe → wav2vec2 forced alignment → diarization → subtitles
 ```
-
-- Voice activity detection (pyannote or silero) splits speech into chunks and drops silence.
-- Cohere Transcribe transcribes each chunk.
-- A wav2vec2 model force-aligns the transcript to the audio for per-word timestamps.
-- pyannote assigns a speaker to every word and segment.
-- Results are written as SRT, VTT, TXT, TSV, or JSON.
 
 ## Requirements
 
@@ -28,6 +32,7 @@ audio → VAD → Cohere Transcribe → wav2vec2 forced alignment → diarizatio
 - [FFmpeg](https://ffmpeg.org/) on your PATH (used for audio decoding)
 - A Hugging Face account with access to the gated models:
   - [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
+  - [`CohereLabs/cohere-transcribe-arabic-07-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-arabic-07-2026) (only if you use the Arabic/English finetuned model)
   - [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) (only if you use `--diarize`)
 
 Accept the model terms on their Hugging Face pages, then log in:
