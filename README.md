@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/bakrianoo/cohereX/main/coherex/assets/images/logo-coherex.png" alt="CohereX" width="420">
+</p>
+
 # CohereX
 
 Speech transcription with word-level timestamps and speaker diarization, built on
@@ -35,15 +39,21 @@ hf auth login
 ## Install
 
 ```bash
+pip install coherex
+```
+
+For automatic language detection, include the optional extra:
+
+```bash
+pip install "coherex[langid]"
+```
+
+To work from source instead:
+
+```bash
 git clone https://github.com/bakrianoo/cohereX.git
 cd cohereX
 pip install -e .
-```
-
-Optional automatic language detection needs one extra package:
-
-```bash
-pip install -e ".[langid]"
 ```
 
 GPU is strongly recommended. On CPU the model runs but is slow.
@@ -83,6 +93,23 @@ if you are unsure.
 `en`, `fr`, `de`, `es`, `it`, `pt`, `nl`, `pl`, `el`, `ar`, `ja`, `zh`, `vi`, `ko`.
 
 Automatic detection (`--language auto`) chooses from this set only.
+
+## Models
+
+By default CohereX uses [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
+(14 languages). Pass `--model` to use a different Cohere ASR model.
+
+For Arabic, English, and Arabic-English code-switched audio, the finetuned
+[`CohereLabs/cohere-transcribe-arabic-07-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-arabic-07-2026)
+is more accurate:
+
+```bash
+coherex audio.mp3 --model CohereLabs/cohere-transcribe-arabic-07-2026 --language ar -o out/
+```
+
+CohereX reads the supported languages from the model itself, so `--language` is validated
+against whatever the chosen model accepts (`en`, `ar` for the Arabic model), and
+`--language auto` only probes those.
 
 ## Common options
 
