@@ -111,16 +111,17 @@ Automatic detection (`--language auto`) chooses from this set only.
 
 ## Models
 
-By default CohereX uses [`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
-(14 languages). Pass `--model` to use a different Cohere ASR model.
-
-For Arabic, English, and Arabic-English code-switched audio, the finetuned
+This fork defaults to the finetuned
 [`CohereLabs/cohere-transcribe-arabic-07-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-arabic-07-2026)
-is more accurate:
+model (`en`, `ar`, and Arabic-English code-switched audio), with `--language ar` also as the
+default. Pass `--model` / `--language` to use a different Cohere ASR model:
 
 ```bash
-coherex audio.mp3 --model CohereLabs/cohere-transcribe-arabic-07-2026 --language ar -o out/
+coherex audio.mp3 --model CohereLabs/cohere-transcribe-03-2026 --language en -o out/
 ```
+
+The upstream 14-language base model is
+[`CohereLabs/cohere-transcribe-03-2026`](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026).
 
 CohereX reads the supported languages from the model itself, so `--language` is validated
 against whatever the chosen model accepts (`en`, `ar` for the Arabic model), and
@@ -147,26 +148,38 @@ coherex audio.mp3 --language en --backend vllm
 Add `--vllm_api_key` if the server requires one, and `--vllm_args` to pass extra
 `vllm serve` flags (e.g. `--vllm_args "--gpu-memory-utilization 0.8"`).
 
+For a from-scratch server setup, including a CPU-only vLLM build, see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). To smoke-test a deployed server
+against real audio files with a live progress bar, see
+[main.py](main.py) and [docs/TESTING.md](docs/TESTING.md). To turn a
+transcript into a summary, action items, or Q&A answers with a local LLM
+running alongside it, see [llm_client.py](llm_client.py) and
+[docs/LLM_DEPLOYMENT.md](docs/LLM_DEPLOYMENT.md). To run both as one
+sequential command — transcribe, then analyze — see
+[pipeline.py](pipeline.py) and [docs/PIPELINE.md](docs/PIPELINE.md). For a
+narrative account of how this whole deployment came together, see
+[docs/SESSION_LOG.md](docs/SESSION_LOG.md).
+
 ## Common options
 
-| Option | Default | Description |
-| --- | --- | --- |
-| `--language` | — | Language code or `auto`. Required. |
-| `--diarize` | off | Assign speaker labels (needs the pyannote model + token). |
-| `--no_align` | off | Skip forced alignment (segment-level timestamps only). |
-| `--device` | `cuda` if available | `cpu` or `cuda`. |
-| `--compute_type` | `default` | `bfloat16`, `float16`, `float32`, or `default` (bfloat16 on GPU, float32 on CPU). |
-| `--batch_size` | `8` | VAD chunks per forward pass. Helps on GPU; use `1` on CPU. |
-| `--vad_method` | `pyannote` | `pyannote` or `silero`. |
-| `--chunk_size` | `30` | Max seconds per VAD chunk. Keep below 35. |
-| `--backend` | `local` | `local` (in-process) or `vllm` (see [Serving with vLLM](#serving-with-vllm)). |
-| `--output_format` / `-f` | `all` | `srt`, `vtt`, `txt`, `tsv`, `json`, `aud`, or `all`. |
-| `--output_dir` / `-o` | `.` | Where to write outputs. |
-| `--punctuation` | `true` | Set `false` for lower-cased output without punctuation. |
-| `--max_line_width` | none | Max characters per subtitle line. |
-| `--max_line_count` | none | Max lines per subtitle cue. |
-| `--min_speakers` / `--max_speakers` | none | Constrain the speaker count for diarization. |
-| `--hf_token` | none | Hugging Face token (or use `hf auth login`). |
+| Option                                  | Default               | Description                                                                               |
+| --------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------- |
+| `--language`                          | `ar`                 | Language code or`auto`.                                                                 |
+| `--diarize`                           | off                   | Assign speaker labels (needs the pyannote model + token).                                 |
+| `--no_align`                          | off                   | Skip forced alignment (segment-level timestamps only).                                    |
+| `--device`                            | `cuda` if available | `cpu` or `cuda`.                                                                      |
+| `--compute_type`                      | `default`           | `bfloat16`, `float16`, `float32`, or `default` (bfloat16 on GPU, float32 on CPU). |
+| `--batch_size`                        | `8`                 | VAD chunks per forward pass. Helps on GPU; use`1` on CPU.                               |
+| `--vad_method`                        | `silero`            | `pyannote` or `silero`.                                                               |
+| `--chunk_size`                        | `30`                | Max seconds per VAD chunk. Keep below 35.                                                 |
+| `--backend`                           | `local`             | `local` (in-process) or `vllm` (see [Serving with vLLM](#serving-with-vllm)).          |
+| `--output_format` / `-f`            | `all`               | `srt`, `vtt`, `txt`, `tsv`, `json`, `aud`, or `all`.                        |
+| `--output_dir` / `-o`               | `out-ar/`           | Where to write outputs.                                                                   |
+| `--punctuation`                       | `true`              | Set`false` for lower-cased output without punctuation.                                  |
+| `--max_line_width`                    | `42`                | Max characters per subtitle line.                                                         |
+| `--max_line_count`                    | `2`                 | Max lines per subtitle cue.                                                               |
+| `--min_speakers` / `--max_speakers` | none                  | Constrain the speaker count for diarization.                                              |
+| `--hf_token`                          | none                  | Hugging Face token (or use`hf auth login`).                                             |
 
 Run `coherex --help` for the full list.
 

@@ -8,7 +8,6 @@ from typing import Iterable, Optional, Union, List
 import numpy as np
 import pandas as pd
 import torch
-import torchaudio
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 from coherex.audio import SAMPLE_RATE, load_audio
@@ -90,7 +89,12 @@ def load_align_model(language_code: str, device: str, model_name: Optional[str] 
                          f"then pass the model name via --align_model [MODEL_NAME]")
             raise ValueError(f"No default align-model for language: {language_code}")
 
-    if model_name in torchaudio.pipelines.__all__:
+    try:
+        import torchaudio
+    except Exception:
+        torchaudio = None
+
+    if torchaudio is not None and model_name in torchaudio.pipelines.__all__:
         pipeline_type = "torchaudio"
         bundle = torchaudio.pipelines.__dict__[model_name]
         align_model = bundle.get_model(dl_kwargs={"model_dir": model_dir}).to(device)

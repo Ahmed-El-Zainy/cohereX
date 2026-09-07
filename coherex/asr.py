@@ -13,7 +13,7 @@ from coherex.log_utils import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_MODEL = "CohereLabs/cohere-transcribe-03-2026"
+DEFAULT_MODEL = "CohereLabs/cohere-transcribe-arabic-07-2026"
 
 # Fallback language set used by the vLLM backend, which cannot read the model
 # config locally. Matches the base Cohere Transcribe model.

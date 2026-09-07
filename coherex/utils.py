@@ -440,22 +440,23 @@ class WriteJSON(ResultWriter):
         json.dump(result, file, ensure_ascii=False)
 
 
+WRITERS = {
+    "txt": WriteTXT,
+    "vtt": WriteVTT,
+    "srt": WriteSRT,
+    "tsv": WriteTSV,
+    "json": WriteJSON,
+    "aud": WriteAudacity,
+}
+# Every concrete format "all" expands to, in a stable order.
+OUTPUT_FORMATS = list(WRITERS)
+
+
 def get_writer(
     output_format: str, output_dir: str
 ) -> Callable[[dict, str, dict], None]:
-    writers = {
-        "txt": WriteTXT,
-        "vtt": WriteVTT,
-        "srt": WriteSRT,
-        "tsv": WriteTSV,
-        "json": WriteJSON,
-    }
-    optional_writers = {
-        "aud": WriteAudacity,
-    }
-
     if output_format == "all":
-        all_writers = [writer(output_dir) for writer in writers.values()]
+        all_writers = [WRITERS[fmt](output_dir) for fmt in OUTPUT_FORMATS]
 
         def write_all(result: dict, file: str, options: dict):
             for writer in all_writers:
@@ -463,9 +464,7 @@ def get_writer(
 
         return write_all
 
-    if output_format in optional_writers:
-        return optional_writers[output_format](output_dir)
-    return writers[output_format](output_dir)
+    return WRITERS[output_format](output_dir)
 
 def interpolate_nans(x, method='nearest'):
     if method == "ignore":

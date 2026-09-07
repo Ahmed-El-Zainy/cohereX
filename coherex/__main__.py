@@ -12,7 +12,7 @@ SUPPORTED_LANGUAGES = [
     "en", "fr", "de", "es", "it", "pt", "nl", "pl", "el", "ar", "ja", "zh", "vi", "ko",
 ]
 
-DEFAULT_MODEL = "CohereLabs/cohere-transcribe-03-2026"
+DEFAULT_MODEL = "CohereLabs/cohere-transcribe-arabic-07-2026"
 DEFAULT_DIARIZE_MODEL = "pyannote/speaker-diarization-community-1"
 
 try:
@@ -39,12 +39,12 @@ def cli():
     parser.add_argument("--vllm_api_key", type=str, default=None, help="API key for the vLLM server, if it requires one (defaults to the VLLM_API_KEY env var)")
     parser.add_argument("--vllm_args", type=str, default=None, help="extra arguments passed to 'vllm serve' when CohereX launches its own server, e.g. \"--max-model-len 448 --gpu-memory-utilization 0.8\"")
 
-    parser.add_argument("--output_dir", "-o", type=str, default=".", help="directory to save the outputs")
+    parser.add_argument("--output_dir", "-o", type=str, default="out-ar/", help="directory to save the outputs")
     parser.add_argument("--output_format", "-f", type=str, default="all", choices=["all", "srt", "vtt", "txt", "tsv", "json", "aud"], help="format of the output file; if not specified, all available formats will be produced")
     parser.add_argument("--verbose", type=str2bool, default=True, help="whether to print out the progress and debug messages")
     parser.add_argument("--log-level", type=str, default=None, choices=["debug", "info", "warning", "error", "critical"], help="logging level (overrides --verbose if set)")
 
-    parser.add_argument("--language", type=str, default=None, choices=SUPPORTED_LANGUAGES + ["auto"], help="language spoken in the audio (REQUIRED — use a code, or 'auto' to detect by probing the model)")
+    parser.add_argument("--language", type=str, default="ar", choices=SUPPORTED_LANGUAGES + ["auto"], help="language spoken in the audio (use a code, or 'auto' to detect by probing the model)")
 
     # ASR params
     parser.add_argument("--punctuation", type=str2bool, default=True, help="whether to produce punctuation and casing; if False, output is lower-cased with no punctuation")
@@ -57,7 +57,7 @@ def cli():
     parser.add_argument("--return_char_alignments", action='store_true', help="Return character-level alignments in the output json file")
 
     # vad params
-    parser.add_argument("--vad_method", type=str, default="pyannote", choices=["pyannote", "silero"], help="VAD method to be used")
+    parser.add_argument("--vad_method", type=str, default="silero", choices=["pyannote", "silero"], help="VAD method to be used")
     parser.add_argument("--vad_onset", type=float, default=0.500, help="Onset threshold for VAD (see pyannote.audio), reduce this if speech is not being detected")
     parser.add_argument("--vad_offset", type=float, default=0.363, help="Offset threshold for VAD (see pyannote.audio), reduce this if speech is not being detected.")
     parser.add_argument("--chunk_size", type=int, default=30, help="Chunk size for merging VAD segments. Default is 30; must stay below Cohere's 35s limit.")
@@ -70,8 +70,8 @@ def cli():
     parser.add_argument("--speaker_embeddings", action="store_true", help="Include speaker embeddings in JSON output (only works with --diarize)")
 
     # subtitle formatting
-    parser.add_argument("--max_line_width", type=optional_int, default=None, help="(not possible with --no_align) the maximum number of characters in a line before breaking the line")
-    parser.add_argument("--max_line_count", type=optional_int, default=None, help="(not possible with --no_align) the maximum number of lines in a segment")
+    parser.add_argument("--max_line_width", type=optional_int, default=42, help="(not possible with --no_align) the maximum number of characters in a line before breaking the line")
+    parser.add_argument("--max_line_count", type=optional_int, default=2, help="(not possible with --no_align) the maximum number of lines in a segment")
     parser.add_argument("--highlight_words", type=str2bool, default=False, help="(not possible with --no_align) underline each word as it is spoken in srt and vtt")
 
     parser.add_argument("--threads", type=optional_int, default=0, help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")

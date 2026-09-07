@@ -137,9 +137,9 @@ class VLLMBackend:
         model: str,
         api_key: Optional[str] = None,
         supported_languages: Optional[List[str]] = None,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
         server: Optional[ManagedVLLMServer] = None,
-        max_workers: int = 8,
+        max_workers: int = 2,
     ):
         _require_httpx()
         self.base_url = base_url.rstrip("/")
