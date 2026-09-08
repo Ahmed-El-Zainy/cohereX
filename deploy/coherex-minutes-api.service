@@ -2,6 +2,12 @@
 Description=CohereX meeting minutes HTTP API
 After=network-online.target
 Wants=network-online.target
+# Restart=always is NOT unconditional by default: systemd gives up after
+# DefaultStartLimitBurst (5) starts in DefaultStartLimitIntervalSec (10s) and
+# leaves the unit failed until a human intervenes. This API is the only thing
+# that accepts meetings, so it must keep retrying through a transient bad
+# config, a full disk, or a dependency that is still coming up after boot.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -11,6 +17,22 @@ EnvironmentFile=/etc/coherex-minutes.env
 ExecStart=/opt/coherex-venv/bin/uvicorn coherex_minutes.api:app --host 127.0.0.1 --port 8080 --workers 1
 Restart=always
 RestartSec=5
+
+# The box runs at ~7GB/7.8GB with swap active while the ASR model is warm, so
+# an OOM event is a question of when. Make the API the last thing the kernel
+# picks: vLLM is restartable and the worker will bring it back, but a dead API
+# silently drops every submission until someone notices.
+OOMScoreAdjust=-900
+
+# vLLM pins OpenMP to both vCPUs. Without a weight the API loses the CPU to it
+# and health checks and polls start timing out even though nothing is wrong.
+CPUWeight=1000
+
+# Bound a runaway so it can never be the cause of an OOM. Streaming downloads
+# use 1MB blocks, so real usage is far below this.
+MemoryHigh=384M
+MemoryMax=768M
+
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

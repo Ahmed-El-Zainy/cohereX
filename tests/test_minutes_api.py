@@ -180,3 +180,29 @@ def test_creating_the_app_touches_no_filesystem_until_startup(tmp_path, monkeypa
         assert data_dir.exists()
         assert (data_dir / "jobs.sqlite3").is_file()
         assert client.get("/health").status_code == 200
+
+
+def test_every_failure_uses_the_error_envelope_including_routing_errors(tmp_path):
+    """The contract promises one error shape everywhere, so a client may read
+    error.code on any failure. Starlette's router raises the *parent*
+    HTTPException for an unrouted path or a bad method, which a handler bound to
+    FastAPI's subclass would let through as a bare {"detail": ...}."""
+    client, _, _ = make_client(tmp_path)
+
+    responses = {
+        "bad path": client.get("/v1/meeting-minute/typo", headers=auth()),
+        "bad method": client.post("/v1/meeting-minutes/x/status", headers=auth()),
+        "unknown id": client.get("/v1/meeting-minutes/x/status", headers=auth()),
+        "no bearer": client.get("/v1/meeting-minutes/x/status"),
+    }
+
+    for label, response in responses.items():
+        body = response.json()
+        assert body["success"] is False, label
+        assert isinstance(body["error"]["code"], str), label
+        assert isinstance(body["error"]["message"], str), label
+
+    assert responses["bad path"].json()["error"]["code"] == "REQUEST_FAILED"
+    assert responses["bad method"].json()["error"]["code"] == "REQUEST_FAILED"
+    assert responses["unknown id"].json()["error"]["code"] == "NOT_FOUND"
+    assert responses["no bearer"].json()["error"]["code"] == "UNAUTHORIZED"

@@ -2,6 +2,10 @@
 Description=CohereX meeting minutes FIFO worker
 After=network-online.target coherex-minutes-api.service
 Wants=network-online.target
+# Same reasoning as the API unit: a worker that stops retrying leaves every
+# accepted meeting queued for ever. Deliberately NOT Requires= the API -- the
+# two must fail independently.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -11,8 +15,17 @@ EnvironmentFile=/etc/coherex-minutes.env
 ExecStart=/opt/coherex-venv/bin/python -m coherex_minutes.worker
 Restart=always
 RestartSec=10
+
+# Protected from the OOM killer, but less than the API: losing the worker
+# pauses processing, losing the API loses submissions.
+OOMScoreAdjust=-500
+
 KillSignal=SIGTERM
+# A job in flight will not return within the timeout, so systemd SIGKILLs it.
+# That is safe and intended: ASR and LLM progress are checkpointed to disk, and
+# claim_next() resumes the same PROCESSING job on the next start.
 TimeoutStopSec=30
+
 PrivateTmp=true
 ProtectHome=true
 

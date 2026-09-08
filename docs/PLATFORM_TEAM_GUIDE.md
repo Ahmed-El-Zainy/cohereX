@@ -80,6 +80,12 @@ Content-Type: application/json
 If that `meetingId` already exists, `status` is whatever it is now (`QUEUED`,
 `PROCESSING`, `COMPLETED`, or `FAILED`) — not a second job.
 
+⚠️ **A re-POST ignores every field except `meetingId`.** Submitting the same id
+with a *corrected* `videoUrl` does **not** update the job and does **not** retry
+it — you get the original job, still bound to the original URL, and the response
+looks like a success. Fixing a bad URL therefore requires a **new `meetingId`**
+(or an ops reset). Do not build a "resubmit to repair" path.
+
 **Do not** wait for minutes in this request. It returns as soon as the job is
 recorded.
 
@@ -105,7 +111,7 @@ failures (lookup succeeded).
 
 | `status` | Meaning |
 | --- | --- |
-| `QUEUED` | Waiting behind another meeting (one worker). `progress` 0. |
+| `QUEUED` | Waiting behind another meeting (one worker), or waiting for disk space to download the video. `progress` 0. Both clear on their own — keep polling, do not resubmit. |
 | `PROCESSING` | Download/ffmpeg/ASR or LLM. |
 | `COMPLETED` | Safe to GET minutes. |
 | `FAILED` | Terminal. See `error`. Do not POST the same id to retry. |
@@ -146,9 +152,12 @@ Unknown id: **404** `{ "success": false, "error": { "code": "NOT_FOUND", ... } }
 ## 3. Minutes — `GET /v1/meeting-minutes/{meetingId}`
 
 Call **only** after status is `COMPLETED`. Repeat GET returns the **same**
-payload.
+payload, byte for byte, with no expiry in v1 — results are stored indefinitely
+and are never regenerated. Persist on your side anyway; do not treat this
+endpoint as your system of record.
 
-Success **200**:
+Success **200**. Generated text is **Arabic** — the English examples in
+`required_intergration.md` illustrate the *shape* only:
 
 ```json
 {
@@ -160,21 +169,43 @@ Success **200**:
       "sections": [
         {
           "key": "meeting_info",
-          "title": "Meeting details",
-          "content": "| Day & date | Place | Time |\n| --- | --- | --- |\n| Monday, 07/09/2026 | Main Boardroom | From 10:00 to 11:30 |"
+          "title": "بيانات الاجتماع",
+          "content": "| اليوم والتاريخ | المكان | الوقت |\n| --- | --- | --- |\n| غير مذكور في التسجيل | غير مذكور في التسجيل | غير مذكور في التسجيل |"
+        },
+        { "key": "attendance", "title": "الحضور", "content": "" },
+        {
+          "key": "introduction",
+          "title": "المقدمة",
+          "content": "افتتح رئيس المجلس الاجتماع ورحّب بالحضور."
+        },
+        {
+          "key": "agenda",
+          "title": "جدول الأعمال",
+          "content": "| # | البند |\n| --- | --- |\n| 1 | اعتماد الميزانية السنوية |"
+        },
+        {
+          "key": "main_items",
+          "title": "البنود الرئيسية",
+          "content": "**1. اعتماد الميزانية السنوية**\n\nاستعرض المجلس الميزانية المقترحة وناقش التكاليف التشغيلية المتوقعة."
         }
       ]
     },
     "decisions": [
       {
-        "title": "Approve the 2027 annual budget",
-        "description": "Approve the annual budget presented during the meeting.",
+        "title": "اعتماد الميزانية السنوية 2027",
+        "description": "اعتماد الميزانية السنوية المعروضة خلال الاجتماع.",
         "kind": "RESOLUTION",
         "type": "FOR_EXECUTION",
         "agendaItemOrder": 1,
-        "responsiblePersonName": null,
-        "completionDuration": null,
-        "completionDurationUnit": null
+        "responsiblePersonName": null
+      },
+      {
+        "title": "إعداد خطة التنفيذ النهائية",
+        "kind": "ASSIGNMENT",
+        "type": "FOR_EXECUTION",
+        "responsiblePersonName": "أحمد علي",
+        "completionDuration": 14,
+        "completionDurationUnit": "DAYS"
       }
     ],
     "generatedAt": "2026-09-07T10:36:10Z"
@@ -185,11 +216,26 @@ Success **200**:
 `content` matches platform `POST /api/minutes`:
 
 - `content` is an **object**, not a string.
-- `sections` always an array, keys in order: `meeting_info`, `attendance`,
-  `introduction`, `agenda`, `main_items`.
-- Section `content` is Markdown (GFM tables).
+- `sections` is **always exactly these five, in this order**: `meeting_info`,
+  `attendance`, `introduction`, `agenda`, `main_items`. Nothing is dropped and
+  nothing else is added, so you can render slots without null-checking the list.
+- `title` is **model-generated Arabic prose and may be `""`**. Key your layout,
+  translations, and storage off `key`, never off `title`.
+- Section `content` is Markdown (GFM tables) and may be `""`.
 - Decisions are **only** in `decisions[]`, never inside sections.
-- Missing facts → empty/`null`. Do not treat empty sections as a transport error.
+- Missing facts → empty string, `null`, or an Arabic "not stated" line. None of
+  these are transport errors; persist them as-is.
+
+**Optional decision keys are omitted, not `null`.** This differs from the
+examples in `required_intergration.md`. Read them with `??`/optional chaining,
+not `=== null`:
+
+| Key | When present |
+| --- | --- |
+| `title`, `kind`, `type`, `responsiblePersonName` | always (`responsiblePersonName` may be `null`) |
+| `description` | only when the model produced one |
+| `agendaItemOrder` | only when a positive integer was inferred |
+| `completionDuration`, `completionDurationUnit` | **only when `kind` is `ASSIGNMENT`** (may be `null` there); absent entirely on `RESOLUTION` |
 
 ```ts
 type MinutesContent = {
@@ -232,12 +278,17 @@ There is **no transcript** in this response.
 }
 ```
 
+Every failure on every route uses this envelope — including a mistyped path or
+a wrong HTTP method — so `error.code` is always safe to read.
+
 | Code | HTTP | When |
 | --- | --- | --- |
 | `UNAUTHORIZED` | 401 | Missing/wrong Bearer |
+| `SERVICE_UNAVAILABLE` | 503 | API restarting or misconfigured. **Retryable** — back off and repeat the same call; it is not a job failure |
 | `INVALID_VIDEO_URL` | 400 | Bad URL |
 | `UNSUPPORTED_LANGUAGE` | 400 | `en` / `auto` |
 | `INVALID_REQUEST` | 422 | Other body validation (e.g. illegal `meetingId`) |
+| `REQUEST_FAILED` | 404 / 405 | Wrong **path** or method — a client bug, not an unknown meeting. Unknown `meetingId` is `NOT_FOUND`; check this first if every call fails |
 | `NOT_FOUND` | 404 | Unknown `meetingId` |
 | `MINUTES_NOT_READY` | 200 | GET minutes before complete |
 | `GENERATION_FAILED` | 200 | GET minutes after failed job |

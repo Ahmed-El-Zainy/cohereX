@@ -38,6 +38,12 @@ reserved on top of it. At ~2.7 Arabic chars per token, the shipped 10000/1800
 pair needs ~5500 of the 8192 tokens. Overflowing the window fails every attempt
 identically, so the job never completes.
 
+Add `OOMScoreAdjust=500` to the `[Service]` section of **`coherex-vllm.service`**.
+The box runs at ~7GB/7.8GB with swap active, so an OOM event is a matter of
+when. This makes vLLM the kernel's preferred victim: the worker restarts it on
+the next toggle, whereas a killed API silently drops every submission. The
+minutes API and worker units carry the matching negative adjustments.
+
 Reload, but do **not** enable `coherex-llm`; the worker keeps only one model
 warm:
 
@@ -63,6 +69,18 @@ systemctl enable --now coherex-minutes-api coherex-minutes-worker
 Set `COHEREX_VIDEO_ALLOWED_HOSTS` to the exact storage/CDN hostnames used by
 signed URLs, including any redirect destination. Downloads are denied when this
 allowlist is empty or the hostname is absent.
+
+Check free disk before going live and set `COHEREX_MINUTES_MIN_FREE_BYTES`
+accordingly:
+
+```bash
+df -h /var/lib
+```
+
+The reserve must exceed one meeting's video, or every download defers and the
+queue stalls. A deferred download logs a `Deferring download for ...` warning
+each sweep — alert on it; it means the disk needs attention, and meetings are
+piling up queued rather than failing.
 
 There must be exactly **one** API uvicorn worker and one minutes worker.
 Multiple API workers would each create an ingest pool; multiple minutes workers

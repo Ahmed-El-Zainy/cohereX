@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 
 import pytest
@@ -18,6 +19,8 @@ def make_settings(tmp_path):
         api_key="secret",
         manage_services=False,
         worker_poll_seconds=0,
+        min_free_bytes=0,
+        ingest_sweep_seconds=0,
     )
 
 
@@ -307,3 +310,55 @@ def test_progress_is_a_high_water_mark_and_replays_keep_the_retry_count(tmp_path
     advanced = store.get("replay")
     assert advanced and advanced.progress == 85
     assert advanced.retry_count == 0
+
+
+def test_require_storage_defers_rather_than_failing_when_the_reserve_is_breached(
+    tmp_path, monkeypatch
+):
+    settings = replace(make_settings(tmp_path), min_free_bytes=5_000_000_000)
+    ingest = IngestManager(settings, JobStore(settings.database_path))
+    monkeypatch.setattr(IngestManager, "_free_bytes", lambda self: 6_000_000_000)
+
+    ingest._require_storage(0)  # 6GB free against a 5GB reserve: room to work
+    with pytest.raises(IngestError) as caught:
+        ingest._require_storage(2_000_000_000)  # would leave only 4GB
+    ingest.close()
+
+    assert caught.value.code == "INSUFFICIENT_STORAGE"
+    assert caught.value.defer is True
+
+
+def test_disk_pressure_keeps_the_meeting_queued_and_the_sweep_recovers_it(
+    tmp_path, monkeypatch
+):
+    """An accepted meeting is never dropped for a condition the platform cannot
+    fix. Disk pressure parks it as PENDING; the sweep picks it up once space is
+    back, without the platform resubmitting."""
+    settings = make_settings(tmp_path)
+    store = JobStore(settings.database_path)
+    job, _ = store.create("tight", "https://storage.example.com/a.mp4")
+    ingest = IngestManager(settings, store, max_workers=1)
+
+    def out_of_space(_job):
+        raise IngestError("INSUFFICIENT_STORAGE", "no room", defer=True)
+
+    monkeypatch.setattr(ingest, "download", out_of_space)
+    ingest._run(job)
+
+    parked = store.get("tight")
+    assert parked and parked.status == "QUEUED"
+    assert parked.download_status == "PENDING"
+    assert parked.error_code is None
+    assert store.claim_next() is None
+
+    monkeypatch.setattr(ingest, "download", lambda _job: tmp_path / "source.video")
+    ingest.sweep()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if store.get("tight").download_status == "READY":
+            break
+        time.sleep(0.02)
+    ingest.close()
+
+    assert store.get("tight").download_status == "READY"
+    assert store.claim_next().meeting_id == "tight"

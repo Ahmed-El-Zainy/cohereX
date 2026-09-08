@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, HttpUrl
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import Settings
 from .ingest import IngestManager
@@ -89,8 +90,13 @@ def create_app(
         if scheme.lower() != "bearer" or not hmac.compare_digest(token_digest, expected_digest):
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-    @app.exception_handler(HTTPException)
-    async def http_error(_: Request, exc: HTTPException) -> JSONResponse:
+    # Registered against Starlette's class, not FastAPI's subclass: the router
+    # raises the parent for an unrouted path (404) or a bad method (405), and a
+    # handler bound to the subclass would let those through as Starlette's bare
+    # {"detail": ...}. The contract promises one error envelope everywhere, so
+    # a client may parse error.code on any failure, including a mistyped URL.
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         if exc.status_code == 401:
             return JSONResponse(error("UNAUTHORIZED", "Missing or invalid Bearer token."), 401)
         if exc.status_code == 503:

@@ -41,6 +41,8 @@ class Settings:
     llm_url: str
     llm_api_key: str
     max_video_bytes: int
+    min_free_bytes: int
+    ingest_sweep_seconds: float
     max_duration_seconds: float
     chunk_seconds: int
     asr_timeout_seconds: float
@@ -82,6 +84,14 @@ class Settings:
             llm_url=os.environ.get("COHEREX_LLM_URL", "http://127.0.0.1:8001"),
             llm_api_key=os.environ.get("COHEREX_LLM_API_KEY", ""),
             max_video_bytes=_int_env("COHEREX_MINUTES_MAX_VIDEO_BYTES", 2_000_000_000),
+            # Disk the ingester will not consume. Downloads begin at POST but
+            # the worker is serial, so queued videos accumulate; without a
+            # floor a deep queue fills the disk, and once SQLite cannot write
+            # the API stops accepting requests at all. Below this floor a
+            # download is deferred, never failed -- see IngestManager.
+            min_free_bytes=_int_env("COHEREX_MINUTES_MIN_FREE_BYTES", 5_000_000_000),
+            # How often deferred or interrupted downloads are retried.
+            ingest_sweep_seconds=_float_env("COHEREX_MINUTES_INGEST_SWEEP_SECONDS", 60),
             max_duration_seconds=_float_env("COHEREX_MINUTES_MAX_DURATION_SECONDS", 10_800),
             chunk_seconds=_int_env("COHEREX_MINUTES_CHUNK_SECONDS", 30),
             asr_timeout_seconds=_float_env("COHEREX_MINUTES_ASR_TIMEOUT_SECONDS", 900),

@@ -35,6 +35,8 @@ def _settings(tmp_path: Path) -> Settings:
         llm_api_key="llm-key",
         video_allowed_hosts=("storage.example.com",),
         max_video_bytes=1024 * 1024,
+        min_free_bytes=0,
+        ingest_sweep_seconds=0,
     )
 
 
