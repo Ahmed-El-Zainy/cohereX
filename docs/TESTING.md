@@ -1,4 +1,30 @@
-# Testing a deployed API with main.py
+# Testing
+
+## Meeting minutes API (automated)
+
+The platform contract in [`required_intergration.md`](../required_intergration.md)
+is covered by pytest under `tests/`. These do **not** start vLLM or llama.cpp.
+
+```bash
+pip install pytest "fastapi>=0.115" "httpx>=0.27"
+python -m pytest tests -q
+```
+
+| File | What it checks |
+| --- | --- |
+| `tests/test_minutes_api.py` | Bearer auth, POST idempotency, language/id validation, status and GET envelopes |
+| `tests/test_minutes_worker.py` | FIFO, sticky FAILED, ASR checkpoint resume, retry cap, decision/section sanitizing |
+| `tests/test_minutes_functional.py` | Full in-process path: POST → download → ffmpeg/ASR/LLM (mocked) → GET minutes, plus blocked-host failure |
+
+GitHub Actions runs the same suite on pull requests (`.github/workflows/test.yml`).
+
+That is **behavior/contract** coverage. It is **not** a live meeting on the SSH box.
+After deploy, use [`deploy/README.md`](../deploy/README.md) §5 with a real signed
+`videoUrl`. `FAILED` ids are sticky; use a new `meetingId` for each smoke run.
+
+---
+
+# Testing a deployed ASR API with main.py
 
 `main.py` (repo root) is a smoke-test script for a running CohereX vLLM
 server — it hits the real HTTP API, not a mock, and saves what it gets back
@@ -45,9 +71,13 @@ cp .env.example .env
 Edit `.env`:
 
 ```bash
-COHEREX_VLLM_URL=http://<server-ip>:8000
+COHEREX_VLLM_URL=http://127.0.0.1:8000
 COHEREX_VLLM_API_KEY=<key>
 ```
+
+Port 8000 is localhost-only in the meeting-minutes deployment. Run `main.py`
+on the server or create an SSH local tunnel before using this URL from a
+laptop.
 
 `.env` is gitignored (`.gitignore` already lists it) — **never commit real
 values**. `.env.example` stays in the repo with placeholders only, as a

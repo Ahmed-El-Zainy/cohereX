@@ -1,0 +1,19 @@
+[Unit]
+Description=CohereX meeting minutes HTTP API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/coherex
+EnvironmentFile=/etc/coherex-minutes.env
+ExecStart=/opt/coherex-venv/bin/uvicorn coherex_minutes.api:app --host 127.0.0.1 --port 8080 --workers 1
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

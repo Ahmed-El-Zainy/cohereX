@@ -7,6 +7,9 @@ setup is reproducible on another box, or debuggable if the running server acts u
 > A GPU server is strongly preferred (see the main [README](../README.md)).
 > This path only exists because the target box has no GPU. Expect CPU inference
 > to be well below real-time throughput.
+>
+> Mapping this box to the platform meeting-minutes HTTP API (implemented in
+> the checkout, not yet deployed): [MEETING_MINUTES_API.md](MEETING_MINUTES_API.md).
 
 ## 1. Confirm the box can run vLLM's CPU backend
 
@@ -128,7 +131,7 @@ After=network.target
 Type=simple
 User=root
 Environment=VLLM_CPU_OMP_THREADS_BIND=0-1
-ExecStart=/opt/coherex-venv/bin/vllm serve CohereLabs/cohere-transcribe-arabic-07-2026 --trust-remote-code --host 0.0.0.0 --gpu-memory-utilization 0.65 --enforce-eager --port 8000 --api-key <VLLM_API_KEY>
+ExecStart=/opt/coherex-venv/bin/vllm serve CohereLabs/cohere-transcribe-arabic-07-2026 --trust-remote-code --host 127.0.0.1 --gpu-memory-utilization 0.65 --enforce-eager --port 8000 --api-key <VLLM_API_KEY>
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -145,20 +148,20 @@ systemctl start coherex-vllm       # only after `hf auth login` has succeeded
 journalctl -u coherex-vllm -f      # watch model load; first run downloads several GB
 ```
 
-The API key is bound to `0.0.0.0` (reachable from the internet) because the
-use case here is calling it from arbitrary projects/machines, not just
-localhost. Treat that key as a credential — **never commit the real value to
-this repo**; keep it in a secrets manager or a gitignored local file.
+The service is bound to `127.0.0.1` because it is now an implementation detail
+behind the meeting-minutes API. Use an SSH tunnel for direct maintenance tests;
+do not expose port 8000 publicly. Treat its API key as a credential — **never
+commit the real value to this repo**.
 
 `VLLM_CPU_OMP_THREADS_BIND=0-1` pins OpenMP threads to the 2 available cores;
 adjust the range to match `nproc` on a different box. See §8 below for why
 `--gpu-memory-utilization` and `--enforce-eager` are both required here, not
 optional tuning.
 
-**Not yet done:** this box has no firewall configured, so besides SSH (22) and
-the vLLM port (8000), whatever else is listening is also reachable from the
-internet. Consider `ufw allow 22 && ufw allow 8000 && ufw enable` (test the SSH
-rule sticks before you enable it — a mistake here can lock you out).
+The meeting-minutes deployment must expose only SSH (22) and HTTPS (443):
+`ufw allow 22/tcp && ufw allow 443/tcp && ufw enable`. Follow
+[`deploy/README.md`](../deploy/README.md), and test that the SSH rule works from
+a second session before enabling the firewall.
 
 ## 8. Runtime crashes hit on first start, and their fixes
 
@@ -238,19 +241,22 @@ in §6 as a safety margin, this is what got the service to actually reach
 > For a repeatable, scriptable version of everything in this section —
 > `.env`-based config, a live progress bar, saved JSON/text output per file —
 > use [`main.py`](../main.py), documented in [TESTING.md](TESTING.md).
+>
+> Run direct port-8000 commands on the server or through an SSH tunnel; the
+> model port is intentionally bound to localhost.
 
 Once `journalctl -u coherex-vllm -f` shows `Application startup complete.`
 and routes including `/v1/audio/transcriptions`:
 
 ```bash
-curl -s -o /dev/null -w "http_status=%{http_code}\n" http://<SERVER_IP>:8000/health
+curl -s -o /dev/null -w "http_status=%{http_code}\n" http://127.0.0.1:8000/health
 # http_status=200
 ```
 
 ### Real API call
 
 ```bash
-curl http://<SERVER_IP>:8000/v1/audio/transcriptions \
+curl http://127.0.0.1:8000/v1/audio/transcriptions \
   -H "Authorization: Bearer <VLLM_API_KEY>" \
   -F file=@samples/saudi_business_03min.mp3 \
   -F model=CohereLabs/cohere-transcribe-arabic-07-2026 \
@@ -265,7 +271,7 @@ ASR, then alignment and subtitle formatting run locally again:
 
 ```bash
 coherex "samples/saudi_business_03min.mp3" \
-  --backend vllm --vllm_url http://<SERVER_IP>:8000 --vllm_api_key <VLLM_API_KEY>
+  --backend vllm --vllm_url http://127.0.0.1:8000 --vllm_api_key <VLLM_API_KEY>
 ```
 
 With the CLI defaults (§ below) this needs no other flags — model, language,

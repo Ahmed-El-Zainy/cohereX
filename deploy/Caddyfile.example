@@ -1,0 +1,16 @@
+# Replace the hostname, then install as /etc/caddy/Caddyfile.
+minutes.example.com {
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080 {
+        transport http {
+            read_timeout 30s
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
+}

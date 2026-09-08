@@ -6,6 +6,10 @@ board-meeting transcript into what a board secretary
 (أمين سر مجلس الإدارة) actually needs from it. Read DEPLOYMENT.md first if
 you haven't; this assumes that setup already exists.
 
+Platform HTTP mapping (minutes + decisions, implemented in the checkout but
+not yet deployed):
+[MEETING_MINUTES_API.md](MEETING_MINUTES_API.md).
+
 ## Board Secretary task scope
 
 The task list this LLM performs is scoped to a real job description:
@@ -131,7 +135,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/llama.cpp/build/bin/llama-server -m /opt/models/qwen2.5-3b-instruct-q4_k_m.gguf --host 0.0.0.0 --port 8001 -c 4096 -t 2 --api-key <LLM_API_KEY>
+ExecStart=/opt/llama.cpp/build/bin/llama-server -m /opt/models/qwen2.5-3b-instruct-q4_k_m.gguf --host 127.0.0.1 --port 8001 -c 8192 -t 2 --api-key <LLM_API_KEY>
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -147,10 +151,10 @@ systemctl daemon-reload
 # reboot doesn't bring up both services and OOM the box
 ```
 
-Port `8001` (the ASR server owns `8000`). `-c 4096` is the context window —
-enough for a transcript of a several-minute clip plus a task prompt and
-response; raise it if you'll feed it much longer transcripts. `-t 2` matches
-`nproc`, same reasoning as `VLLM_CPU_OMP_THREADS_BIND` in DEPLOYMENT.md.
+Port `8001` (the ASR server owns `8000`) is localhost-only. `-c 8192` is the
+context window used by the meeting-minutes worker's map-reduce slices. `-t 2`
+matches `nproc`, same reasoning as `VLLM_CPU_OMP_THREADS_BIND` in
+DEPLOYMENT.md.
 
 ## 4. The toggle
 
@@ -178,10 +182,11 @@ things when you're done with the LLM.
 
 ## 5. Using it
 
-Raw API (OpenAI-compatible `/v1/chat/completions`, same shape vLLM exposes):
+Raw API (OpenAI-compatible `/v1/chat/completions`, same shape vLLM exposes).
+Run this on the server or through an SSH tunnel; port 8001 is not public:
 
 ```bash
-curl http://<SERVER_IP>:8001/v1/chat/completions \
+curl http://127.0.0.1:8001/v1/chat/completions \
   -H "Authorization: Bearer <LLM_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "Summarize: ..."}], "max_tokens": 500}'

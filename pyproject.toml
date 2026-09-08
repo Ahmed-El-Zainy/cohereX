@@ -42,10 +42,16 @@ Issues = "https://github.com/bakrianoo/cohereX/issues"
 dev = ["pytest"]
 langid = ["langdetect>=1.0.9"]
 vllm = ["httpx>=0.27.0", "vllm[audio]>=0.19.0"]
+minutes-api = [
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "uvicorn[standard]>=0.30.0",
+]
 all = ["coherex[langid,vllm]"]
 
 [project.scripts]
 coherex = "coherex.__main__:cli"
+coherex-minutes-worker = "coherex_minutes.worker:main"
 
 [build-system]
 requires = ["setuptools"]
@@ -59,3 +65,7 @@ include = ["coherex*"]
 
 [tool.setuptools.package-data]
 coherex = ["assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
