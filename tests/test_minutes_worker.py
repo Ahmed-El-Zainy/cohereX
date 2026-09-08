@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from coherex_minutes.config import Settings
+from coherex_minutes.config import DEFAULT_SLICE_CHARS, Settings
 from coherex_minutes.ingest import IngestError, IngestManager
 from coherex_minutes.processor import MeetingProcessor
 from coherex_minutes.store import JobStore
@@ -227,3 +227,83 @@ def test_worker_fails_job_after_bounded_consecutive_retries(tmp_path):
     assert job and job.status == "FAILED"
     assert job.error_code == "TRANSCRIPTION_FAILED"
     assert store.claim_next() is None
+
+
+# Measured with the Qwen2.5 tokenizer against out-ar/saudi_business_03min.txt
+# (1721 chars -> 637 tokens). llama.cpp is started with `-c 8192` per
+# deploy/README.md step 2.
+ARABIC_CHARS_PER_TOKEN = 2.7
+LLAMA_CPP_CONTEXT_TOKENS = 8192
+
+
+def test_default_slice_and_response_fit_the_llama_cpp_context_window(monkeypatch):
+    """The decisions and sections prompts send a whole slice and still reserve
+    the full response budget. If that exceeds the server's context the request
+    fails identically on every attempt, so the job can never complete."""
+    monkeypatch.delenv("COHEREX_MINUTES_SLICE_CHARS", raising=False)
+    monkeypatch.delenv("COHEREX_MINUTES_LLM_MAX_TOKENS", raising=False)
+    settings = Settings.from_env()
+
+    assert settings.transcript_slice_chars == DEFAULT_SLICE_CHARS
+    prompt_tokens = settings.transcript_slice_chars / ARABIC_CHARS_PER_TOKEN
+    assert prompt_tokens + settings.llm_max_tokens < LLAMA_CPP_CONTEXT_TOKENS
+
+
+class ProgressThenFailProcessor:
+    """Mirrors MeetingProcessor: every attempt re-emits the progress it already
+    reached from durable checkpoints (processor.py sets GENERATING_MINUTES/85
+    before the LLM stage) and only then fails."""
+
+    services = None
+
+    def __init__(self, store, stage="GENERATING_MINUTES", progress=85):
+        self.store = store
+        self.stage = stage
+        self.progress = progress
+        self.attempts = 0
+
+    def process(self, job):
+        self.attempts += 1
+        self.store.update_progress(job.meeting_id, self.stage, self.progress)
+        raise RuntimeError("deterministic failure after a progress write")
+
+
+def test_job_failing_after_a_progress_write_still_exhausts_retries(tmp_path):
+    settings = replace(make_settings(tmp_path), max_processing_retries=3)
+    store = JobStore(settings.database_path)
+    store.create("poisoned", "https://example.com/a.mp4")
+    store.set_download_status("poisoned", "READY")
+    processor = ProgressThenFailProcessor(store)
+    worker = Worker(settings, store, processor)
+
+    for _ in range(10):
+        worker.run_once()
+        if store.get("poisoned").status == "FAILED":
+            break
+
+    job = store.get("poisoned")
+    assert job and job.status == "FAILED"
+    assert job.error_code == "MINUTES_GENERATION_FAILED"
+    assert processor.attempts == settings.max_processing_retries
+    assert store.claim_next() is None
+
+
+def test_progress_is_a_high_water_mark_and_replays_keep_the_retry_count(tmp_path):
+    settings = make_settings(tmp_path)
+    store = JobStore(settings.database_path)
+    store.create("replay", "https://example.com/a.mp4")
+
+    store.update_progress("replay", "TRANSCRIBING", 60)
+    store.increment_retry("replay")
+
+    # A resumed attempt replays earlier checkpoints before reaching the failure.
+    store.update_progress("replay", "TRANSCRIBING", 20)
+    replayed = store.get("replay")
+    assert replayed and replayed.progress == 60
+    assert replayed.retry_count == 1
+
+    # Genuine advancement is what forgives the earlier failure.
+    store.update_progress("replay", "GENERATING_MINUTES", 85)
+    advanced = store.get("replay")
+    assert advanced and advanced.progress == 85
+    assert advanced.retry_count == 0

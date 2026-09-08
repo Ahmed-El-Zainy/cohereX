@@ -187,13 +187,35 @@ class JobStore:
         return self._row_to_job(row)
 
     def update_progress(self, meeting_id: str, stage: str, progress: int) -> None:
-        self._update(
-            meeting_id,
-            status="PROCESSING",
-            stage=stage,
-            progress=max(0, min(99, int(progress))),
-            retry_count=0,
-        )
+        """Record progress, resetting the retry counter only on real advancement.
+
+        ``retry_count`` counts *consecutive* failures, so forward progress is
+        allowed to forgive earlier ones. A resumed job, however, replays the
+        progress it already reached — ``MeetingProcessor`` re-emits stage and
+        percent from durable checkpoints on every attempt — and treating a
+        replay as advancement would clear the counter each time, so a job that
+        fails deterministically after its first progress write would retry for
+        ever instead of failing at ``max_processing_retries``.
+
+        ``progress`` is therefore a high-water mark (also what the platform
+        contract wants: it must never appear to go backwards), and only a value
+        strictly above that mark counts as advancement. Both expressions below
+        read the pre-update row, so they compare against the stored value.
+        """
+        value = max(0, min(99, int(progress)))
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET status = 'PROCESSING',
+                    stage = ?,
+                    progress = MAX(progress, ?),
+                    retry_count = CASE WHEN ? > progress THEN 0 ELSE retry_count END,
+                    updated_at = ?
+                WHERE meeting_id = ?
+                """,
+                (stage, value, value, utc_now(), meeting_id),
+            )
 
     def increment_retry(self, meeting_id: str) -> int:
         with self.connect() as connection:

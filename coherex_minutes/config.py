@@ -17,6 +17,20 @@ def _float_env(name: str, default: float) -> float:
     return float(value) if value else default
 
 
+# Transcript characters per LLM slice, and the ceiling used when compacting
+# notes back down for the final sections pass.
+#
+# Qwen2.5 tokenizes this project's Arabic transcripts at ~2.7 chars/token
+# (measured against out-ar/saudi_business_03min.txt), so 10,000 chars is
+# ~3,700 prompt tokens. The decisions and sections prompts also reserve
+# COHEREX_MINUTES_LLM_MAX_TOKENS (1800) for the response, which leaves real
+# headroom inside the llama.cpp server's `-c 8192` context window (see
+# docs/LLM_DEPLOYMENT.md). Raising this without also raising `-c` overflows
+# that window on every attempt, and the failure is deterministic, so the job
+# never succeeds.
+DEFAULT_SLICE_CHARS = 10_000
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -74,7 +88,9 @@ class Settings:
             service_timeout_seconds=_float_env("COHEREX_MINUTES_SERVICE_TIMEOUT_SECONDS", 600),
             worker_poll_seconds=_float_env("COHEREX_MINUTES_WORKER_POLL_SECONDS", 2),
             max_processing_retries=_int_env("COHEREX_MINUTES_MAX_RETRIES", 10),
-            transcript_slice_chars=_int_env("COHEREX_MINUTES_SLICE_CHARS", 18_000),
+            transcript_slice_chars=_int_env(
+                "COHEREX_MINUTES_SLICE_CHARS", DEFAULT_SLICE_CHARS
+            ),
             llm_max_tokens=_int_env("COHEREX_MINUTES_LLM_MAX_TOKENS", 1800),
             llm_timeout_seconds=_float_env("COHEREX_MINUTES_LLM_TIMEOUT_SECONDS", 900),
             manage_services=os.environ.get("COHEREX_MINUTES_MANAGE_SERVICES", "true").lower()

@@ -32,6 +32,12 @@ The units are `/etc/systemd/system/coherex-vllm.service` and
 `/etc/systemd/system/coherex-llm.service`. Also change llama.cpp context from
 `-c 4096` to `-c 8192`.
 
+`-c` and `COHEREX_MINUTES_SLICE_CHARS` must be changed together: a slice is sent
+as one prompt and the response budget (`COHEREX_MINUTES_LLM_MAX_TOKENS`) is
+reserved on top of it. At ~2.7 Arabic chars per token, the shipped 10000/1800
+pair needs ~5500 of the 8192 tokens. Overflowing the window fails every attempt
+identically, so the job never completes.
+
 Reload, but do **not** enable `coherex-llm`; the worker keeps only one model
 warm:
 

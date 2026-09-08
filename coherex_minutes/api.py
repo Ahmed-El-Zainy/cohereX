@@ -41,21 +41,36 @@ def _submitted(job: Job) -> dict[str, Any]:
     )
 
 
+def _store(request: Request) -> JobStore:
+    """The store exists only after startup; see ``lifespan`` below."""
+    store = request.app.state.store
+    if store is None:
+        raise HTTPException(status_code=503, detail="Service is still starting")
+    return store
+
+
 def create_app(
     settings: Settings | None = None,
     store: JobStore | None = None,
     ingest: IngestManager | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
-    settings.prepare()
-    store = store or JobStore(settings.database_path)
-    ingest = ingest or IngestManager(settings, store)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
-        ingest.recover()
+    async def lifespan(app: FastAPI):
+        # Creating the data directory and the SQLite file is *startup* work,
+        # never *import* work. `uvicorn coherex_minutes.api:app` runs this;
+        # a bare `import coherex_minutes.api` must not touch the filesystem,
+        # otherwise the module cannot be imported by anyone without write
+        # access to COHEREX_MINUTES_DATA_DIR (CI, tests, local development).
+        settings.prepare()
+        if app.state.store is None:
+            app.state.store = JobStore(settings.database_path)
+        if app.state.ingest is None:
+            app.state.ingest = IngestManager(settings, app.state.store)
+        app.state.ingest.recover()
         yield
-        ingest.close()
+        app.state.ingest.close()
 
     app = FastAPI(title="CohereX Meeting Minutes API", version="1.0.0", lifespan=lifespan)
     app.state.settings = settings
@@ -101,7 +116,7 @@ def create_app(
         status_code=202,
         dependencies=[Depends(authenticate)],
     )
-    def submit(payload: SubmitMeeting) -> JSONResponse:
+    def submit(request: Request, payload: SubmitMeeting) -> JSONResponse:
         if payload.language != "ar":
             return JSONResponse(
                 error(
@@ -110,17 +125,17 @@ def create_app(
                 ),
                 status_code=400,
             )
-        job, created = store.create(payload.meetingId, str(payload.videoUrl), "ar")
+        job, created = _store(request).create(payload.meetingId, str(payload.videoUrl), "ar")
         if created:
-            ingest.schedule(job)
+            request.app.state.ingest.schedule(job)
         return JSONResponse(_submitted(job), status_code=202)
 
     @app.get(
         "/v1/meeting-minutes/{meeting_id}/status",
         dependencies=[Depends(authenticate)],
     )
-    def status(meeting_id: str) -> JSONResponse:
-        job = store.get(meeting_id)
+    def status(request: Request, meeting_id: str) -> JSONResponse:
+        job = _store(request).get(meeting_id)
         if job is None:
             return JSONResponse(error("NOT_FOUND", "Meeting job was not found."), 404)
         data: dict[str, Any] = {
@@ -141,8 +156,8 @@ def create_app(
         "/v1/meeting-minutes/{meeting_id}",
         dependencies=[Depends(authenticate)],
     )
-    def minutes(meeting_id: str) -> JSONResponse:
-        job = store.get(meeting_id)
+    def minutes(request: Request, meeting_id: str) -> JSONResponse:
+        job = _store(request).get(meeting_id)
         if job is None:
             return JSONResponse(error("NOT_FOUND", "Meeting job was not found."), 404)
         if job.status in {"QUEUED", "PROCESSING"}:

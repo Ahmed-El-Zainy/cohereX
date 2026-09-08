@@ -163,3 +163,20 @@ def test_unknown_meeting_returns_not_found(tmp_path):
     response = client.get("/v1/meeting-minutes/missing", headers=auth())
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_creating_the_app_touches_no_filesystem_until_startup(tmp_path, monkeypatch):
+    """`uvicorn coherex_minutes.api:app` imports this module as whatever user
+    systemd runs it as, and pytest imports it as the developer. Neither may
+    require write access to COHEREX_MINUTES_DATA_DIR at import time."""
+    data_dir = tmp_path / "not-created-yet"
+    monkeypatch.setenv("COHEREX_MINUTES_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("AI_SERVICE_API_KEY", "minutes-secret")
+
+    app = create_app()
+    assert not data_dir.exists()
+
+    with TestClient(app) as client:
+        assert data_dir.exists()
+        assert (data_dir / "jobs.sqlite3").is_file()
+        assert client.get("/health").status_code == 200
