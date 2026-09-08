@@ -54,6 +54,7 @@ class Settings:
     llm_timeout_seconds: float
     manage_services: bool
     video_allowed_hosts: tuple[str, ...]
+    allow_private_video_hosts: bool
     asr_service: str
     llm_service: str
 
@@ -110,6 +111,16 @@ class Settings:
                 for host in os.environ.get("COHEREX_VIDEO_ALLOWED_HOSTS", "").split(",")
                 if host.strip()
             ),
+            # Smoke testing only. Lets the ingester fetch from loopback/private
+            # addresses so a meeting can be replayed from a file served on the
+            # box itself. This is the second of two gates -- the hostname must
+            # ALSO be in COHEREX_VIDEO_ALLOWED_HOSTS -- and it must stay false
+            # in production, where it would turn videoUrl into an SSRF probe of
+            # the internal network.
+            allow_private_video_hosts=os.environ.get(
+                "COHEREX_MINUTES_ALLOW_PRIVATE_VIDEO_HOSTS", "false"
+            ).lower()
+            in {"1", "true", "yes"},
             asr_service=os.environ.get("COHEREX_ASR_SERVICE", "coherex-vllm"),
             llm_service=os.environ.get("COHEREX_LLM_SERVICE", "coherex-llm"),
         )

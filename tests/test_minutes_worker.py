@@ -21,6 +21,7 @@ def make_settings(tmp_path):
         worker_poll_seconds=0,
         min_free_bytes=0,
         ingest_sweep_seconds=0,
+        allow_private_video_hosts=False,
     )
 
 
@@ -362,3 +363,42 @@ def test_disk_pressure_keeps_the_meeting_queued_and_the_sweep_recovers_it(
 
     assert store.get("tight").download_status == "READY"
     assert store.claim_next().meeting_id == "tight"
+
+
+def test_private_host_opt_in_still_requires_the_explicit_allowlist(tmp_path):
+    """The smoke-test escape hatch is the second of two gates, never the only
+    one: enabling it must not turn videoUrl into a probe of the internal
+    network for hosts nobody allowlisted."""
+    settings = replace(
+        make_settings(tmp_path),
+        allow_private_video_hosts=True,
+        video_allowed_hosts=("storage.example.com",),
+    )
+    ingest = IngestManager(settings, JobStore(settings.database_path))
+
+    # Allowlisted: the private-address check is skipped, as intended.
+    ingest._validate_public_url("https://storage.example.com/board.mp4")
+
+    # Not allowlisted: still refused, opt-in or not.
+    with pytest.raises(IngestError) as caught:
+        ingest._validate_public_url("http://127.0.0.1:8000/board.mp4")
+    ingest.close()
+    assert caught.value.code == "VIDEO_HOST_NOT_ALLOWED"
+
+
+def test_private_addresses_are_refused_when_the_opt_in_is_off(tmp_path, monkeypatch):
+    settings = replace(
+        make_settings(tmp_path),
+        allow_private_video_hosts=False,
+        video_allowed_hosts=("storage.example.com",),
+    )
+    ingest = IngestManager(settings, JobStore(settings.database_path))
+    monkeypatch.setattr(
+        "coherex_minutes.ingest.socket.getaddrinfo",
+        lambda host, port, *a, **k: [(0, 0, 0, 0, ("127.0.0.1", port or 443))],
+    )
+
+    with pytest.raises(IngestError) as caught:
+        ingest._validate_public_url("https://storage.example.com/board.mp4")
+    ingest.close()
+    assert caught.value.code == "INVALID_VIDEO_URL"

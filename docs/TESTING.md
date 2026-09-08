@@ -1,5 +1,130 @@
 # Testing
 
+## Meeting minutes API — live server (`scripts/smoke_test_api.py`)
+
+Drives all three endpoints against a **running** server with real audio and
+checks the responses against the contract in
+[PLATFORM_TEAM_GUIDE.md](PLATFORM_TEAM_GUIDE.md): section keys and order,
+decision key-presence rules, idempotent replay, and stable repeat reads.
+Exit status is 0 only if every check passed, so it works as a post-deploy gate.
+
+```bash
+# Against a real signed URL (the production-truthful path)
+scripts/smoke_test_api.py --video-url https://storage.example.com/board.mp4
+
+# On the box, before the platform's signed URLs exist: publish a local file
+scripts/smoke_test_api.py --serve samples/saudi_business_03min.mp3
+```
+
+`AI_SERVICE_BASE_URL` / `AI_SERVICE_API_KEY` come from `.env` (same names the
+platform uses) or `--base-url` / `--api-key`.
+
+`.mp3` needs no conversion — the worker runs ffmpeg with `-vn`, so an
+audio-only file is chunked exactly like a video's audio track.
+
+### Three levels of validation — know which one you are running
+
+Empty sections in a smoke run are usually the level, not a bug.
+
+| Level | Command | Runs where | Client needs |
+| --- | --- | --- | --- |
+| 1. Contract | `dev_stack.py` + `smoke_test_api.py` | all local, **models stubbed** | `httpx`, `fastapi`, `uvicorn` |
+| 2. Real everything | `smoke_test_api.py --video-url ...` | **all on the server** | `httpx` **only** |
+
+**The API client needs nothing but `httpx`.** Once the service is deployed, the
+worker does all of it server-side — download, ffmpeg, ASR chunk by chunk, the
+ASR↔LLM toggle, and minutes generation. Level 2 is the deliverable, and it is
+also the *lighter* test to run, not the heavier one.
+
+### Do not use `pipeline.py` to test the API
+
+`pipeline.py` predates the minutes API and is **not** an API client. It splits
+the work: VAD chunking and wav2vec2 alignment run on *your* machine, only ASR
+and the LLM are remote. That is why importing it pulls in torch, transformers
+and pyannote-audio, and why a bare checkout fails with
+`ModuleNotFoundError: No module named 'pyannote'`.
+
+It is still useful for checking **model quality** against a clip — but run it
+**on the server**, where `coherex` and its dependencies are already installed
+(DEPLOYMENT.md §4), not on a laptop:
+
+```bash
+ssh "$COHEREX_SERVER_SSH"
+cd /opt/coherex && source /opt/coherex-venv/bin/activate
+python pipeline.py samples/saudi_business_03min.mp3 --task minutes_draft \
+  --max_tokens 1200 --skip_toggle     # you control systemctl directly on the box
+```
+
+### Seeing the raw transcript
+
+The API deliberately does not return it (see PLATFORM_TEAM_GUIDE.md). After a
+run, the ASR output is on the box at:
+
+```
+/var/lib/coherex-minutes/jobs/<meetingId>/transcript.txt
+```
+
+The video and the audio chunks are deleted when the job finishes; the
+transcript is kept as an ops artifact. If minutes come back empty, read this
+file first — an empty or garbled transcript explains it immediately, and points
+at ASR rather than the LLM.
+
+### Where the token comes from
+
+Nobody issues it: this service is the API provider, so it mints its own
+credential. Generate one, and use the **same value** in both places:
+
+```bash
+openssl rand -hex 32
+```
+
+| Where | Key | Purpose |
+| --- | --- | --- |
+| `/etc/coherex-minutes.env` on the server (mode 0600) | `AI_SERVICE_API_KEY` | what the API checks incoming Bearer tokens against |
+| this repo's `.env` (gitignored) | `AI_SERVICE_API_KEY` | what the smoke test sends |
+| the platform team, over a secret channel | `AI_SERVICE_API_KEY` | what their backend sends |
+
+`AI_SERVICE_BASE_URL` is your own deployment's DNS name — there is nothing to
+look up. These are distinct from `COHEREX_VLLM_API_KEY` and
+`COHEREX_LLM_API_KEY`, which stay on the box and are never shared: those guard
+the two model servers on localhost, this one guards the public API.
+
+### Before the server exists: `scripts/dev_stack.py`
+
+Runs the real API, the real worker, the real store, the real download and the
+real ffmpeg chunking locally, with only the ASR and LLM calls stubbed. It
+generates a key and prints the two lines to paste:
+
+```bash
+scripts/dev_stack.py          # leave running
+# then, in another shell:
+scripts/smoke_test_api.py --serve samples/saudi_business_03min.mp3
+```
+
+Because the models are stubbed it proves the **contract and the job lifecycle**,
+never transcription or minutes quality. It is also the quickest thing to hand
+the platform team to integrate against while the box is being set up.
+
+### `--serve` needs two settings, and both must be reverted
+
+The ingester refuses private and loopback addresses, so a locally served file
+is rejected until **both** of these are set on the server:
+
+```bash
+COHEREX_VIDEO_ALLOWED_HOSTS=127.0.0.1
+COHEREX_MINUTES_ALLOW_PRIVATE_VIDEO_HOSTS=true
+```
+
+These are two independent gates: the opt-in only relaxes the private-address
+check for a hostname that is *already* on the allowlist, so enabling it alone
+does nothing. Leaving them on in production would turn `videoUrl` into an SSRF
+probe of the internal network. Revert both, and restore the real storage
+hostname, before handing the URL to the platform.
+
+Timing: on the reference CPU box a 3-minute clip takes roughly 10-12 minutes
+end to end (DEPLOYMENT.md §9). The default `--timeout` is 6 hours; the polling
+loop prints stage and progress as it goes, and Ctrl-C leaves the job running.
+
 ## Meeting minutes API (automated)
 
 The platform contract in [`required_intergration.md`](../required_intergration.md)

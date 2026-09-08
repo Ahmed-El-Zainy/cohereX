@@ -112,6 +112,18 @@ second session. Do **not** allow 8000, 8001, or 8080 publicly.
 
 ## 5. Smoke test
 
+Preferred: run the scripted check, which drives all three endpoints and
+validates the payload against the contract (see
+[TESTING.md](../docs/TESTING.md)):
+
+```bash
+cd /opt/coherex && source /opt/coherex-venv/bin/activate
+scripts/smoke_test_api.py --video-url https://storage.example.com/signed/meeting.mp4
+```
+
+Or by hand:
+
+
 ```bash
 curl https://minutes.example.com/v1/meeting-minutes \
   -H "Authorization: Bearer $AI_SERVICE_API_KEY" \

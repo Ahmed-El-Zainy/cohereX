@@ -236,6 +236,15 @@ class IngestManager:
                 "VIDEO_HOST_NOT_ALLOWED",
                 "The video URL hostname is not in the configured allowlist.",
             )
+        if self.settings.allow_private_video_hosts:
+            # Reached only for a host already on the explicit allowlist above.
+            logger.warning(
+                "COHEREX_MINUTES_ALLOW_PRIVATE_VIDEO_HOSTS is enabled; skipping the "
+                "private-address check for %s. This must be off in production.",
+                hostname,
+            )
+            return
+
         try:
             addresses = {
                 ipaddress.ip_address(item[4][0])

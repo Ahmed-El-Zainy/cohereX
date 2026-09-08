@@ -1,0 +1,54 @@
+{
+  "success": true,
+  "data": {
+    "meetingId": "smoke-20260908-173149-eea50c",
+    "language": "ar",
+    "content": {
+      "sections": [
+        {
+          "key": "meeting_info",
+          "title": "بيانات الاجتماع",
+          "content": ""
+        },
+        {
+          "key": "attendance",
+          "title": "الحضور",
+          "content": ""
+        },
+        {
+          "key": "introduction",
+          "title": "المقدمة",
+          "content": ""
+        },
+        {
+          "key": "agenda",
+          "title": "جدول الأعمال",
+          "content": ""
+        },
+        {
+          "key": "main_items",
+          "title": "البنود الرئيسية",
+          "content": "استعرض المجلس الميزانية السنوية المقترحة."
+        }
+      ]
+    },
+    "decisions": [
+      {
+        "title": "اعتماد الميزانية السنوية",
+        "kind": "RESOLUTION",
+        "type": "FOR_EXECUTION",
+        "agendaItemOrder": 1,
+        "responsiblePersonName": null
+      },
+      {
+        "title": "إعداد خطة التنفيذ النهائية",
+        "kind": "ASSIGNMENT",
+        "type": "FOR_EXECUTION",
+        "responsiblePersonName": "أحمد علي",
+        "completionDuration": 14,
+        "completionDurationUnit": "DAYS"
+      }
+    ],
+    "generatedAt": "2026-09-08T14:31:50Z"
+  }
+}
