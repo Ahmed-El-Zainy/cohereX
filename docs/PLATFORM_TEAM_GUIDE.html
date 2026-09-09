@@ -422,11 +422,11 @@
   </header>
 
   <div class="status">
-    <span class="pill">NOT LIVE YET</span>
+    <span class="pill">AWAITING DNS</span>
     <div>
-      <p>The three endpoints are <strong>implemented and covered by automated tests</strong>, but the service is not yet installed on the VM. There is no <code>AI_SERVICE_BASE_URL</code> and no API key to hand you until deployment finishes.</p>
-      <p><strong>You can start now.</strong> This contract is final — build and mock against it. We will send you the base URL and bearer key over a secret channel (never in this document, email or chat history) once the box is up.</p>
-    </div>
+      <p>The service is <strong>deployed and running on the VM</strong>. A real board-meeting recording has been taken end to end through real speech recognition and real minutes generation, and all 34 contract checks pass against the live system.</p>
+        <p>What is missing is only the public entry point: there is no DNS name or TLS certificate yet, so it currently listens on localhost. <strong>This contract is final — build against it now.</strong> We will send you the base URL and bearer key over a secret channel (never in this document, email or chat history) as soon as the hostname is in place.</p>
+      </div>
   </div>
 
   <nav class="rail" aria-label="Sections">
@@ -898,9 +898,9 @@ curl -sS <span class="s">"$AI_SERVICE_BASE_URL/v1/meeting-minutes/cm123"</span> 
         <table>
           <thead><tr><th>Recording length</th><th class="num-col">Expected wall clock</th><th>Note</th></tr></thead>
           <tbody>
-            <tr><td>3 minutes</td><td class="num-col">~10–12 min</td><td>Measured on the reference box.</td></tr>
-            <tr><td>60 minutes</td><td class="num-col">~2–5 hours</td><td>Estimated from the same rate.</td></tr>
-            <tr><td>90 minutes</td><td class="num-col">~3–7.5 hours</td><td>A typical board meeting.</td></tr>
+            <tr><td>3 minutes</td><td class="num-col">16 min</td><td><strong>Measured</strong> on the live deployment — 5.4× the recording length.</td></tr>
+            <tr><td>60 minutes</td><td class="num-col">~5.5 hours</td><td>Extrapolated from that rate.</td></tr>
+            <tr><td>90 minutes</td><td class="num-col">~8 hours</td><td>A typical board meeting.</td></tr>
           </tbody>
         </table>
       </div>
