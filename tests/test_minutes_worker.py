@@ -14,6 +14,9 @@ from coherex_minutes.processor import (
     SECTION_KEYS,
     SECTION_SPECS,
     MeetingProcessor,
+    _drop_unsupported_rows,
+    _name_is_in,
+    _normalise_arabic,
     _strip_foreign_scripts,
 )
 from coherex_minutes.store import JobStore
@@ -496,3 +499,62 @@ def test_section_prompt_puts_the_shared_notes_first(tmp_path):
     assert notes in shared
     for prompt, spec in zip(prompts, SECTION_SPECS.values()):
         assert prompt.index(notes) < prompt.index(spec.instruction)
+
+
+# The transcript of the reference clip names no attendees at all.
+_REAL_TRANSCRIPT = (
+    "البايلوز حقت الصندوق اللي هي النظام الاساسي لصندوق الاستثمارات العامه "
+    "هذا اللي هو المجلس وش يسوي بعدها الصلاحيات اللي اعطاها للجان"
+)
+
+
+def test_invented_attendance_rows_are_dropped():
+    """A real run invented محمد / أحمد / سارة as board members for a clip with
+    no attendance roll. Fabricated attendees in corporate minutes are the worst
+    failure this service can have, so names are checked, not trusted."""
+    table = (
+        "| # | الاسم | المنصب | الحضور |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 1 | محمد | الرئيس التنفيذي | حاضر |\n"
+        "| 2 | سارة | الرئيس المالي | حاضر |\n"
+    )
+    assert _drop_unsupported_rows(table, _REAL_TRANSCRIPT) == "غير مذكور في التسجيل"
+
+
+def test_attendance_rows_backed_by_the_transcript_survive():
+    transcript = "افتتح الاجتماع أحمد علي رئيس المجلس ثم تحدث خالد الفهد"
+    table = (
+        "| # | الاسم | المنصب | الحضور |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 1 | أحمد علي | رئيس المجلس | حاضر |\n"
+        "| 2 | فاطمة | عضو | حاضر |\n"
+    )
+    kept = _drop_unsupported_rows(table, transcript)
+    assert "أحمد علي" in kept          # actually spoken
+    assert "فاطمة" not in kept         # invented
+    assert kept.count("|") > 4         # the table survives rather than collapsing
+
+
+def test_name_matching_folds_arabic_spelling_variants():
+    haystack = _normalise_arabic("تحدث احمد علي وايضا سارة")
+    assert _name_is_in("أحمد علي", haystack)     # hamza forms differ
+    assert _name_is_in("السيد أحمد علي", haystack)
+    assert not _name_is_in("خالد", haystack)
+    assert not _name_is_in("", haystack)
+
+
+def test_invented_decision_owners_are_dropped():
+    decisions = MeetingProcessor._validate_decisions(
+        [
+            {"title": "إعداد الخطة", "kind": "ASSIGNMENT",
+             "responsiblePersonName": "محمد", "completionDuration": 7,
+             "completionDurationUnit": "DAYS"},
+        ],
+        _REAL_TRANSCRIPT,
+    )
+    assert decisions[0]["responsiblePersonName"] is None
+    # Without a transcript the check cannot run and must not silently blank it.
+    unchecked = MeetingProcessor._validate_decisions(
+        [{"title": "إعداد الخطة", "kind": "ASSIGNMENT", "responsiblePersonName": "محمد"}]
+    )
+    assert unchecked[0]["responsiblePersonName"] == "محمد"

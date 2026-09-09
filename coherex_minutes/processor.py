@@ -45,7 +45,8 @@ SECTION_SPECS: dict[str, SectionSpec] = {
     "meeting_info": SectionSpec(
         "بيانات الاجتماع",
         "المطلوب الآن قسم «بيانات الاجتماع» فقط. أعد جدول Markdown بالأعمدة "
-        "التالية فقط: | اليوم والتاريخ | المكان | الوقت | ، وصفاً واحداً تحته. "
+        "التالية فقط، ثلاثة أعمدة لا رابع لها: | اليوم والتاريخ | المكان | الوقت | "
+        "، وصفاً واحداً تحته. "
         f"اكتب «{_NOT_STATED}» في أي خانة لم تُذكر صراحةً. "
         "لا تكتب أي نص خارج الجدول، ولا تذكر الحضور ولا بنود جدول الأعمال ولا "
         "النقاشات؛ لكل منها قسم خاص به.",
@@ -53,9 +54,11 @@ SECTION_SPECS: dict[str, SectionSpec] = {
     ),
     "attendance": SectionSpec(
         "الحضور",
-        "المطلوب الآن قسم «الحضور» فقط. إن ذُكرت أسماء الحاضرين أو مناصبهم فأعد "
-        "جدول Markdown بالأعمدة: | # | الاسم | المنصب | الحضور | . "
-        f"وإن لم تُذكر أسماء صراحةً فاكتب سطراً واحداً فقط: «{_NOT_STATED}». "
+        "المطلوب الآن قسم «الحضور» فقط. لا تكتب أي اسم شخص لم يرد حرفياً في "
+        "النص أعلاه، ولا تستخدم أسماء أمثلة مثل محمد أو أحمد أو سارة. "
+        f"إن لم ترد أسماء أشخاص في النص فاكتب سطراً واحداً فقط: «{_NOT_STATED}» "
+        "ولا تكتب جدولاً إطلاقاً. وإن وردت أسماء صريحة فأعد جدول Markdown "
+        "بالأعمدة: | # | الاسم | المنصب | الحضور | . "
         "لا تذكر النقاشات ولا القرارات ولا بنود جدول الأعمال.",
         250,
     ),
@@ -122,6 +125,69 @@ _FOREIGN_SCRIPTS = re.compile(
     "[\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF"
     "\uAC00-\uD7AF\uFF00-\uFFEF]+"
 )
+
+
+_ARABIC_DIACRITICS = re.compile("[\u064B-\u065F\u0670\u06D6-\u06ED]")
+
+
+def _normalise_arabic(text: str) -> str:
+    """Fold the spelling variants that stop a literal name match from working."""
+    text = _ARABIC_DIACRITICS.sub("", text)
+    for source, target in (("أإآٱ", "ا"), ("ى", "ي"), ("ة", "ه"), ("ؤ", "و"), ("ئ", "ي")):
+        for character in source:
+            text = text.replace(character, target)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _name_is_in(name: str, haystack: str) -> bool:
+    """True only when the name is actually spoken in the recording.
+
+    A model handed an empty attendance table fills it in: a real run invented
+    محمد / أحمد / سارة as board members for a clip with no attendance roll at
+    all. Fabricated attendees in corporate minutes are the worst failure this
+    service can have, and the contract forbids it outright, so names are
+    checked against the transcript rather than trusted.
+    """
+    cleaned = _normalise_arabic(name).strip(" .،-|")
+    # Longest first: an alternation led by "ال" would strip only the article
+    # and leave "سيد احمد". A bare "ال" is deliberately not stripped -- it is
+    # part of real surnames like "الفهد", and removing it would break the match.
+    cleaned = re.sub(
+        r"^(السيده|السيد|الاستاذه|الاستاذ|الدكتور|المهندس|د\.|م\.)\s*", "", cleaned
+    )
+    if len(cleaned) < 3:
+        return False
+    return cleaned in haystack
+
+
+def _drop_unsupported_rows(table: str, transcript: str, name_column: int = 1) -> str:
+    """Keep only attendance rows whose name appears in the transcript."""
+    haystack = _normalise_arabic(transcript)
+    kept, dropped, header = [], [], True
+    for line in table.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            kept.append(line)
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if header or all(set(c) <= set("- :") for c in cells):
+            # Column headings and the |---| separator row.
+            kept.append(line)
+            header = False if not all(set(c) <= set("- :") for c in cells) else header
+            continue
+        name = cells[name_column] if len(cells) > name_column else ""
+        if _name_is_in(name, haystack):
+            kept.append(line)
+        else:
+            dropped.append(name)
+    if dropped:
+        logger.warning("Dropped %d attendance row(s) naming people absent from the "
+                       "transcript: %s", len(dropped), ", ".join(dropped[:5]))
+    if not any(l.strip().startswith("|") and not all(
+            set(c.strip()) <= set("- :") for c in l.strip().strip("|").split("|"))
+            for l in kept[2:]):
+        return _NOT_STATED
+    return "\n".join(kept).strip()
 
 
 def _strip_foreign_scripts(text: str) -> str:
@@ -384,6 +450,8 @@ class MeetingProcessor:
         return completed
 
     def _generate(self, job: Job, transcript: str, job_dir: Path) -> dict[str, Any]:
+        """`transcript` is kept for grounding: generated names are checked
+        against what was actually said before they reach the caller."""
         slices = self._slice_transcript(transcript)
         notes_dir = job_dir / "llm-slices"
         notes_dir.mkdir(exist_ok=True)
@@ -412,7 +480,7 @@ class MeetingProcessor:
                 raw = self._ask(self._decisions_prompt(text_slice),
                                 grammar=JSON_ARRAY_GRAMMAR)
                 parsed = _extract_json(raw)
-                decisions = self._validate_decisions(parsed)
+                decisions = self._validate_decisions(parsed, text_slice)
                 _write_json_atomic(decision_path, decisions)
             all_decisions.extend(decisions)
             done_calls += 1
@@ -437,6 +505,8 @@ class MeetingProcessor:
                     grammar=PROSE_GRAMMAR,
                 )
                 _write_text_atomic(section_path, body)
+            if key == "attendance":
+                body = _drop_unsupported_rows(body, transcript)
             bodies[key] = body
             done_calls += 1
             self._llm_progress(job.meeting_id, done_calls, total_calls)
@@ -608,7 +678,7 @@ class MeetingProcessor:
         ]
 
     @staticmethod
-    def _validate_decisions(value: Any) -> list[dict[str, Any]]:
+    def _validate_decisions(value: Any, transcript: str = "") -> list[dict[str, Any]]:
         if isinstance(value, dict):
             value = value.get("decisions")
         if not isinstance(value, list):
@@ -635,9 +705,12 @@ class MeetingProcessor:
             if isinstance(order, int) and order > 0:
                 decision["agendaItemOrder"] = order
             owner = item.get("responsiblePersonName")
-            decision["responsiblePersonName"] = (
-                _strip_foreign_scripts(str(owner)).strip() or None if owner else None
-            )
+            owner = _strip_foreign_scripts(str(owner)).strip() if owner else ""
+            # An owner nobody named in the recording is an invented owner.
+            if owner and transcript and not _name_is_in(owner, _normalise_arabic(transcript)):
+                logger.warning("Dropped invented decision owner %r", owner)
+                owner = ""
+            decision["responsiblePersonName"] = owner or None
             if kind == "ASSIGNMENT":
                 duration = item.get("completionDuration")
                 unit = item.get("completionDurationUnit")
