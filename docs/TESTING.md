@@ -22,6 +22,30 @@ platform uses) or `--base-url` / `--api-key`.
 `.mp3` needs no conversion — the worker runs ffmpeg with `-vn`, so an
 audio-only file is chunked exactly like a video's audio track.
 
+### Checking the deployed service (`scripts/check_deployed_api.py`)
+
+The fast one. Exercises all three live endpoints and validates a real payload
+in seconds, where `smoke_test_api.py` runs a whole meeting through and takes
+~16 minutes. Run it after every deploy, restart, or config change.
+
+```bash
+scripts/check_deployed_api.py
+```
+
+With no arguments it reads `COHEREX_SERVER_SSH` from `.env`, opens an SSH
+tunnel (the API listens on localhost only), reads the bearer key **from the
+server**, runs the checks, and closes the tunnel.
+
+It reads the key from the box rather than the environment on purpose: a stale
+`AI_SERVICE_API_KEY` left in `.env` by `dev_stack.py` would otherwise shadow the
+real one and fail every authenticated check against a perfectly healthy server.
+
+Almost nothing has side effects. Rejections (401/422/400) never create a job,
+and the success paths run against a meeting that already completed —
+re-POSTing an existing `meetingId` returns the existing job without creating
+another, which is the idempotency rule worth testing anyway. Only `--submit`
+creates a new job, and it is only needed before the first meeting exists.
+
 ### Three levels of validation — know which one you are running
 
 Empty sections in a smoke run are usually the level, not a bug.
