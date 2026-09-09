@@ -230,12 +230,21 @@ Success **200**. Generated text is **Arabic** — the English examples in
 - `sections` is **always exactly these five, in this order**: `meeting_info`,
   `attendance`, `introduction`, `agenda`, `main_items`. Nothing is dropped and
   nothing else is added, so you can render slots without null-checking the list.
-- `title` is **model-generated Arabic prose and may be `""`**. Key your layout,
-  translations, and storage off `key`, never off `title`.
+- `title` is a **fixed Arabic heading per key**, identical on every meeting:
+  `بيانات الاجتماع`, `الحضور`, `المقدمة`, `جدول الأعمال`, `البنود الرئيسية`. It is
+  safe to display directly. Still key your layout, translations and storage off
+  `key` — `title` is ours to reword, `key` is the contract.
 - Section `content` is Markdown (GFM tables) and may be `""`.
 - Decisions are **only** in `decisions[]`, never inside sections.
-- Missing facts → empty string, `null`, or an Arabic "not stated" line. None of
-  these are transport errors; persist them as-is.
+- Missing facts → empty string, `null`, or `غير مذكور في التسجيل` ("not stated
+  in the recording"). None of these are transport errors; persist them as-is.
+
+**Expect `غير مذكور في التسجيل` often, and treat it as correct.** Attendee names,
+the meeting date, the venue, the time, and decision owners are each checked
+against the transcript before they are returned; anything the recording does
+not actually say is replaced rather than guessed. A recording that never reads
+out an attendance roll produces an empty attendance section — that is the
+service working, not failing. Do not add a fallback that fills these in.
 
 **Optional decision keys are omitted, not `null`.** This differs from the
 examples in `required_intergration.md`. Read them with `??`/optional chaining,

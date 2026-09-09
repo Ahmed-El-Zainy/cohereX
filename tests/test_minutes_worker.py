@@ -587,3 +587,13 @@ def test_meeting_info_keeps_details_that_were_spoken():
     out = _ground_meeting_info(stated, transcript)
     assert "يوم الاثنين" in out and "القاعة الرئيسية" in out
     assert "غير مذكور" not in out
+
+
+def test_main_items_prompt_bans_the_padding_phrases_it_produced():
+    """The 3B model opened every item with the same formula, so each paragraph
+    read identically regardless of what was discussed."""
+    instruction = SECTION_SPECS["main_items"].instruction
+    for filler in ("تم استعراض", "تم التركيز على كيفية", "تمت مناقشة"):
+        assert filler in instruction, filler   # named as forbidden
+    assert "لا تبدأ الجمل بعبارات إنشائية" in instruction
+    assert "جملتين إلى أربع جمل" in instruction

@@ -722,11 +722,17 @@
       <ul class="plain">
         <li><code>content</code> is a JSON <strong>object</strong>, never a JSON-encoded string.</li>
         <li><code>sections</code> is <strong>always exactly these five, in this order</strong>: <code>meeting_info</code>, <code>attendance</code>, <code>introduction</code>, <code>agenda</code>, <code>main_items</code>. Nothing is dropped, nothing else is added — so you can render fixed slots without null-checking the list.</li>
-        <li><code>title</code> is model-generated Arabic prose and <strong>may be <code>""</code></strong>. Key your layout, translations and storage off <code>key</code>, never off <code>title</code>.</li>
+        <li><code>title</code> is a <strong>fixed Arabic heading per key</strong>, identical on every meeting &mdash; <span lang="ar" dir="rtl">بيانات الاجتماع</span>, <span lang="ar" dir="rtl">الحضور</span>, <span lang="ar" dir="rtl">المقدمة</span>, <span lang="ar" dir="rtl">جدول الأعمال</span>, <span lang="ar" dir="rtl">البنود الرئيسية</span>. Safe to display directly. Still key layout, translations and storage off <code>key</code>: <code>title</code> is ours to reword, <code>key</code> is the contract.</li>
         <li><code>content</code> is Markdown and may be <code>""</code>. An empty section is legitimate — it means the recording never stated it.</li>
         <li>Decisions never appear inside sections; they are only in the top-level <code>decisions</code> array.</li>
-        <li>Missing facts come back as <code>""</code>, <code>null</code>, or an Arabic &ldquo;not stated&rdquo; line. None of these is a transport error. Persist them as-is — we deliberately do not invent names, dates, attendance or deadlines.</li>
+        <li>Missing facts come back as <code>""</code>, <code>null</code>, or <span lang="ar" dir="rtl">غير مذكور في التسجيل</span> (&ldquo;not stated in the recording&rdquo;). None of these is a transport error.</li>
       </ul>
+
+      <div class="note-box">
+        <span class="tag">Expect &ldquo;not stated&rdquo; often &mdash; it is the service working</span>
+        <p>Attendee names, the meeting date, the venue, the time and decision owners are each <strong>checked against the transcript</strong> before they are returned. Anything the recording does not actually say is replaced with <span lang="ar" dir="rtl">غير مذكور في التسجيل</span> rather than guessed, because inventing attendees or dates in corporate minutes is the worst thing this service could do.</p>
+        <p>A recording that never reads out an attendance roll therefore produces an empty attendance section. <strong>Do not add a fallback that fills these in.</strong></p>
+      </div>
 
       <h3>Optional decision keys are <em>omitted</em>, not <code>null</code></h3>
       <p>This is the difference most likely to bite you, and it differs from the original spec examples. Read these with <code>?.</code> / <code>??</code>, never <code>=== null</code>.</p>
