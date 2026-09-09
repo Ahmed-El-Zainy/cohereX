@@ -20,6 +20,61 @@ from .store import Job, JobStore, utc_now
 logger = logging.getLogger(__name__)
 
 SECTION_KEYS = ["meeting_info", "attendance", "introduction", "agenda", "main_items"]
+
+# Qwen2.5 is a Chinese-trained multilingual model and leaks CJK tokens into
+# Arabic prose under pressure -- a real run produced "الم发言人" for "the
+# previous speaker". Three layers guard against it, because a prompt alone only
+# discourages the behaviour:
+#   1. these GBNF grammars make non-Arabic scripts structurally unreachable,
+#   2. _language_rule() tells the model the same thing in words,
+#   3. _strip_foreign_scripts() catches anything that still slips through.
+# llama.cpp honours `grammar` on /v1/chat/completions; verified on the box.
+_ARABIC_RANGES = (
+    "[\\u0600-\\u06FF] | [\\u0750-\\u077F] | [\\u08A0-\\u08FF] | "
+    "[\\uFB50-\\uFDFF] | [\\uFE70-\\uFEFF]"
+)
+PROSE_GRAMMAR = (
+    "root ::= char+\n"
+    f"char ::= {_ARABIC_RANGES} | [a-zA-Z0-9] | [ \\t\\r\\n] | "
+    "[\\x21-\\x2F] | [\\x3A-\\x40] | [\\x5B-\\x60] | [\\x7B-\\x7E]\n"
+)
+# Same character set, but wrapped in a JSON-array structure -- so a malformed
+# reply is impossible as well as an off-script one. Excludes the raw " and \
+# that would break a JSON string; escapes are allowed explicitly.
+JSON_ARRAY_GRAMMAR = (
+    'root ::= "[" ws (obj (ws "," ws obj)*)? ws "]"\n'
+    'obj  ::= "{" ws pair (ws "," ws pair)* ws "}"\n'
+    'pair ::= str ws ":" ws val\n'
+    'val  ::= str | num | "true" | "false" | "null"\n'
+    'str  ::= "\\"" ch* "\\""\n'
+    f'ch   ::= {_ARABIC_RANGES} | [a-zA-Z0-9] | [ ] | [\\x21] | [\\x23-\\x2F] | '
+    '[\\x3A-\\x40] | [\\x5B] | [\\x5D-\\x60] | [\\x7B-\\x7E] | "\\\\" ["\\\\/bfnrt]\n'
+    'num  ::= "-"? [0-9]+\n'
+    'ws   ::= [ \\t\\n]*\n'
+)
+
+# CJK, kana, hangul, and their fullwidth/punctuation blocks. Latin is kept:
+# board meetings legitimately mix in English terms.
+_FOREIGN_SCRIPTS = re.compile(
+    "[\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF"
+    "\uAC00-\uD7AF\uFF00-\uFFEF]+"
+)
+
+
+def _strip_foreign_scripts(text: str) -> str:
+    """Last-resort net under the grammar. Mangles the word rather than shipping
+    a Chinese one -- but it firing at all means layer 1 failed, so it warns."""
+    if not text:
+        return text
+    cleaned = _FOREIGN_SCRIPTS.sub("", text)
+    if cleaned != text:
+        logger.warning(
+            "Stripped non-Arabic script from model output; the grammar should "
+            "have prevented this. Removed: %r",
+            "".join(_FOREIGN_SCRIPTS.findall(text))[:80],
+        )
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned
 VALID_DECISION_KINDS = {"RESOLUTION", "ASSIGNMENT"}
 VALID_DURATION_UNITS = {"DAYS", "WEEKS", "MONTHS"}
 
@@ -285,7 +340,8 @@ class MeetingProcessor:
             if note_path.is_file():
                 note = note_path.read_text(encoding="utf-8")
             else:
-                note = self._ask(self._notes_prompt(text_slice), max_tokens=700)
+                note = self._ask(self._notes_prompt(text_slice), max_tokens=700,
+                                 grammar=PROSE_GRAMMAR)
                 _write_text_atomic(note_path, note)
             notes.append(note)
             done_calls += 1
@@ -294,7 +350,8 @@ class MeetingProcessor:
             if decision_path.is_file():
                 decisions = json.loads(decision_path.read_text(encoding="utf-8"))
             else:
-                raw = self._ask(self._decisions_prompt(text_slice))
+                raw = self._ask(self._decisions_prompt(text_slice),
+                                grammar=JSON_ARRAY_GRAMMAR)
                 parsed = _extract_json(raw)
                 decisions = self._validate_decisions(parsed)
                 _write_json_atomic(decision_path, decisions)
@@ -307,7 +364,8 @@ class MeetingProcessor:
             sections = json.loads(sections_path.read_text(encoding="utf-8"))
         else:
             reduced_notes = self._reduce_notes(notes, notes_dir)
-            raw_sections = self._ask(self._sections_prompt(reduced_notes))
+            raw_sections = self._ask(self._sections_prompt(reduced_notes),
+                                     grammar=JSON_ARRAY_GRAMMAR)
             sections = self._validate_sections(_extract_json(raw_sections))
             _write_json_atomic(sections_path, sections)
         self._llm_progress(job.meeting_id, total_calls, total_calls)
@@ -320,17 +378,20 @@ class MeetingProcessor:
             "generatedAt": utc_now(),
         }
 
-    def _ask(self, prompt: str, max_tokens: int | None = None) -> str:
+    def _ask(self, prompt: str, max_tokens: int | None = None,
+             grammar: str | None = None) -> str:
         headers = (
             {"Authorization": f"Bearer {self.settings.llm_api_key}"}
             if self.settings.llm_api_key
             else {}
         )
-        payload = {
+        payload: dict[str, Any] = {
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens or self.settings.llm_max_tokens,
             "temperature": 0.1,
         }
+        if grammar:
+            payload["grammar"] = grammar
         response = httpx.post(
             f"{self.settings.llm_url.rstrip('/')}/v1/chat/completions",
             headers=headers,
@@ -367,6 +428,7 @@ class MeetingProcessor:
                     compacted = self._ask(
                         self._reduce_prompt(grouped_notes),
                         max_tokens=900,
+                        grammar=PROSE_GRAMMAR,
                     )
                     _write_text_atomic(path, compacted)
                 reduced.append(compacted)
@@ -409,6 +471,8 @@ class MeetingProcessor:
             "اكتب السرد بالعربية الفصحى. الاجتماع قد يمزج العربية والإنجليزية. "
             "احتفظ بالمصطلح اللاتيني فقط إذا ظهر بالحروف اللاتينية في النص. "
             "إذا ظهر منقولاً صوتياً بالعربية فاحتفظ به كما هو ولا تخمّن اختصاراً لاتينياً. "
+            "اكتب بالحروف العربية فقط، ويجوز إبقاء المصطلحات الإنجليزية بالحروف "
+            "اللاتينية. لا تستخدم الحروف الصينية أو اليابانية أو الكورية إطلاقاً. "
             "لا تخترع أسماء أو تواريخ أو حضوراً أو ملاك إجراءات أو مواعيد."
         )
 
@@ -466,8 +530,8 @@ class MeetingProcessor:
             key = item["key"]
             by_key[key] = {
                 "key": key,
-                "title": str(item.get("title") or ""),
-                "content": str(item.get("content") or ""),
+                "title": _strip_foreign_scripts(str(item.get("title") or "")),
+                "content": _strip_foreign_scripts(str(item.get("content") or "")),
             }
         return [
             by_key.get(key, {"key": key, "title": "", "content": ""})
@@ -484,7 +548,7 @@ class MeetingProcessor:
         for item in value:
             if not isinstance(item, dict):
                 continue
-            title = str(item.get("title") or "").strip()
+            title = _strip_foreign_scripts(str(item.get("title") or "")).strip()
             kind = item.get("kind")
             if not title or kind not in VALID_DECISION_KINDS:
                 continue
@@ -493,14 +557,18 @@ class MeetingProcessor:
                 "kind": kind,
                 "type": "FOR_EXECUTION",
             }
-            description = str(item.get("description") or "").strip()
+            description = _strip_foreign_scripts(
+                str(item.get("description") or "")
+            ).strip()
             if description:
                 decision["description"] = description
             order = item.get("agendaItemOrder")
             if isinstance(order, int) and order > 0:
                 decision["agendaItemOrder"] = order
             owner = item.get("responsiblePersonName")
-            decision["responsiblePersonName"] = str(owner).strip() if owner else None
+            decision["responsiblePersonName"] = (
+                _strip_foreign_scripts(str(owner)).strip() or None if owner else None
+            )
             if kind == "ASSIGNMENT":
                 duration = item.get("completionDuration")
                 unit = item.get("completionDurationUnit")

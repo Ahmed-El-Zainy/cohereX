@@ -7,7 +7,12 @@ import pytest
 
 from coherex_minutes.config import DEFAULT_SLICE_CHARS, Settings
 from coherex_minutes.ingest import IngestError, IngestManager
-from coherex_minutes.processor import MeetingProcessor
+from coherex_minutes.processor import (
+    JSON_ARRAY_GRAMMAR,
+    PROSE_GRAMMAR,
+    MeetingProcessor,
+    _strip_foreign_scripts,
+)
 from coherex_minutes.store import JobStore
 from coherex_minutes.worker import Worker
 
@@ -402,3 +407,61 @@ def test_private_addresses_are_refused_when_the_opt_in_is_off(tmp_path, monkeypa
         ingest._validate_public_url("https://storage.example.com/board.mp4")
     ingest.close()
     assert caught.value.code == "INVALID_VIDEO_URL"
+
+
+def test_foreign_scripts_are_stripped_from_model_output():
+    """A real run produced "الم发言人" for "the previous speaker" -- Qwen leaking
+    Mandarin into Arabic. The grammar should prevent it; this is the net."""
+    assert _strip_foreign_scripts("الم发言人 السابق") == "الم السابق"
+    # Latin is deliberately kept: board meetings mix in English terms.
+    assert _strip_foreign_scripts("لجنة BIC للاستثمار") == "لجنة BIC للاستثمار"
+    assert _strip_foreign_scripts("") == ""
+    assert _strip_foreign_scripts("نص عربي سليم") == "نص عربي سليم"
+
+
+def test_validators_apply_the_script_filter():
+    sections = MeetingProcessor._validate_sections(
+        [{"key": "main_items", "title": "البنود中文", "content": "نص发言人"}]
+    )
+    body = next(s for s in sections if s["key"] == "main_items")
+    assert "中" not in body["title"] and "发" not in body["content"]
+
+    decisions = MeetingProcessor._validate_decisions(
+        [{"title": "اعتماد中文", "kind": "RESOLUTION",
+          "description": "وصف发言", "responsiblePersonName": "أحمد人"}]
+    )
+    assert "中" not in decisions[0]["title"]
+    assert "发" not in decisions[0]["description"]
+    assert "人" not in decisions[0]["responsiblePersonName"]
+
+
+def test_grammars_restrict_scripts_and_json_shape():
+    # Guards against an edit that silently drops the Arabic ranges or the
+    # JSON structure, which would re-open the leak the grammars exist to close.
+    for grammar in (PROSE_GRAMMAR, JSON_ARRAY_GRAMMAR):
+        assert "\\u0600-\\u06FF" in grammar
+        assert grammar.startswith("root ::=")
+    assert '"[" ws' in JSON_ARRAY_GRAMMAR      # an array, not free prose
+    assert "[\\x22]" not in JSON_ARRAY_GRAMMAR  # a bare quote would break strings
+
+
+def test_ask_sends_the_grammar_through_to_llama_cpp(tmp_path, monkeypatch):
+    settings = make_settings(tmp_path)
+    processor = MeetingProcessor(settings, JobStore(settings.database_path))
+    sent = {}
+
+    class FakeResponse:
+        def raise_for_status(self): pass
+        def json(self): return {"choices": [{"message": {"content": "ok"}}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        sent.update(json)
+        return FakeResponse()
+
+    monkeypatch.setattr("coherex_minutes.processor.httpx.post", fake_post)
+    processor._ask("prompt", grammar=PROSE_GRAMMAR)
+    assert sent["grammar"] == PROSE_GRAMMAR
+
+    sent.clear()
+    processor._ask("prompt")
+    assert "grammar" not in sent
