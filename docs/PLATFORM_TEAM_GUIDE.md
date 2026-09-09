@@ -1,6 +1,13 @@
 # Meeting minutes AI service — teammate integration guide
 
-**Status (2026-09-09): not live on the server.**
+**Status (2026-09-09): deployed and verified, not yet publicly reachable.**
+
+The service is installed on the VM and running. A real board-meeting clip has
+been taken end to end through real speech recognition and real minutes
+generation — all 34 contract checks pass against the live system. What is
+missing is only the public entry point: there is no DNS name or TLS yet, so it
+currently listens on localhost. You will get `AI_SERVICE_BASE_URL` and
+`AI_SERVICE_API_KEY` once that is in place.
 
 > **Sending this to someone?** [`PLATFORM_TEAM_GUIDE.html`](PLATFORM_TEAM_GUIDE.html)
 > is the same content as a standalone page, for teammates without repo access.
@@ -320,7 +327,12 @@ a wrong HTTP method — so `error.code` is always safe to read.
 ## Capacity (set expectations)
 
 This v1 runs on a **small CPU VM**. ASR and the LLM cannot run at the same time.
-Jobs are **FIFO, one at a time**. Mixed Arabic/English is supported; minutes are
+Jobs are **FIFO, one at a time**.
+
+**Measured on the real deployment**: a 3-minute clip takes **16 minutes** end to
+end — about **5.4x the recording length**. Extrapolating: a 1-hour meeting is
+roughly **5.5 hours**, a 90-minute board meeting roughly **8 hours**. Submit from
+a background job, never a web request, and tell users "ready later today". Mixed Arabic/English is supported; minutes are
 Arabic (`language: "ar"` on GET). English words stay Latin **only if ASR wrote
 them**. The model must not invent names, votes, or user ids.
 
