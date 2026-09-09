@@ -589,11 +589,12 @@ def test_meeting_info_keeps_details_that_were_spoken():
     assert "غير مذكور" not in out
 
 
-def test_main_items_prompt_bans_the_padding_phrases_it_produced():
-    """The 3B model opened every item with the same formula, so each paragraph
-    read identically regardless of what was discussed."""
+def test_main_items_prompt_shows_the_exact_heading_format():
+    """Asking for substance without restating the format produced "- 1" and
+    loose bullets. A 3B model follows a worked example far better than a
+    description, so the prompt demonstrates the shape rather than naming it."""
     instruction = SECTION_SPECS["main_items"].instruction
-    for filler in ("تم استعراض", "تم التركيز على كيفية", "تمت مناقشة"):
-        assert filler in instruction, filler   # named as forbidden
-    assert "لا تبدأ الجمل بعبارات إنشائية" in instruction
-    assert "جملتين إلى أربع جمل" in instruction
+    assert "**1. عنوان البند**" in instruction      # a literal example, not prose
+    assert "**2. عنوان البند التالي**" in instruction
+    assert "لا تستخدم شرطات" in instruction          # the bullets it fell back to
+    assert "جملتين إلى أربع جمل" in instruction      # content guidance retained
