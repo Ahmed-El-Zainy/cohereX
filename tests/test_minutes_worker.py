@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import replace
 
@@ -10,6 +11,8 @@ from coherex_minutes.ingest import IngestError, IngestManager
 from coherex_minutes.processor import (
     JSON_ARRAY_GRAMMAR,
     PROSE_GRAMMAR,
+    SECTION_KEYS,
+    SECTION_SPECS,
     MeetingProcessor,
     _strip_foreign_scripts,
 )
@@ -132,12 +135,8 @@ def test_regenerating_chunks_discards_downstream_checkpoints(tmp_path, monkeypat
 
 
 def test_sections_are_ordered_and_missing_sections_are_empty():
-    sections = MeetingProcessor._validate_sections(
-        [
-            {"key": "main_items", "title": "المناقشات", "content": "نص"},
-            {"key": "meeting_info", "title": "البيانات", "content": "معلومات"},
-            {"key": "illegal", "content": "drop"},
-        ]
+    sections = MeetingProcessor._assemble_sections(
+        {"main_items": "نص", "meeting_info": "معلومات", "illegal": "drop"}
     )
     assert [section["key"] for section in sections] == [
         "meeting_info",
@@ -147,6 +146,9 @@ def test_sections_are_ordered_and_missing_sections_are_empty():
         "main_items",
     ]
     assert sections[1]["content"] == ""
+    # Titles are ours, not the model's, so they never vary between meetings.
+    assert sections[0]["title"] == SECTION_SPECS["meeting_info"].title
+    assert all(section["title"] for section in sections)
 
 
 def test_decision_validation_drops_invalid_fields_and_deduplicates():
@@ -420,11 +422,9 @@ def test_foreign_scripts_are_stripped_from_model_output():
 
 
 def test_validators_apply_the_script_filter():
-    sections = MeetingProcessor._validate_sections(
-        [{"key": "main_items", "title": "البنود中文", "content": "نص发言人"}]
-    )
+    sections = MeetingProcessor._assemble_sections({"main_items": "نص发言人"})
     body = next(s for s in sections if s["key"] == "main_items")
-    assert "中" not in body["title"] and "发" not in body["content"]
+    assert "发" not in body["content"]
 
     decisions = MeetingProcessor._validate_decisions(
         [{"title": "اعتماد中文", "kind": "RESOLUTION",
@@ -465,3 +465,34 @@ def test_ask_sends_the_grammar_through_to_llama_cpp(tmp_path, monkeypatch):
     sent.clear()
     processor._ask("prompt")
     assert "grammar" not in sent
+
+
+def test_every_section_instruction_excludes_the_other_sections():
+    """The duplication defect was one narrative copied into every slot. Each
+    prompt has to say where the content it must not include belongs instead."""
+    assert list(SECTION_SPECS) == SECTION_KEYS
+    for key, spec in SECTION_SPECS.items():
+        assert spec.title.strip(), key
+        assert spec.max_tokens > 0, key
+        # Every instruction names at least one thing to leave out.
+        assert "لا ت" in spec.instruction, key
+
+    # The pair that overlapped 89% must now be told apart explicitly.
+    assert "أربع كلمات" in SECTION_SPECS["agenda"].instruction
+    assert "لا تُعِد جدول الأعمال" in SECTION_SPECS["main_items"].instruction
+
+
+def test_section_prompt_puts_the_shared_notes_first(tmp_path):
+    """Five calls share the notes prefix; llama.cpp only reuses a cached prompt
+    when it is a prefix, so the varying instruction must come last."""
+    settings = make_settings(tmp_path)
+    processor = MeetingProcessor(settings, JobStore(settings.database_path))
+    notes = "ملاحظات طويلة عن الاجتماع"
+    prompts = [
+        processor._section_prompt(notes, spec.instruction)
+        for spec in SECTION_SPECS.values()
+    ]
+    shared = os.path.commonprefix(prompts)
+    assert notes in shared
+    for prompt, spec in zip(prompts, SECTION_SPECS.values()):
+        assert prompt.index(notes) < prompt.index(spec.instruction)

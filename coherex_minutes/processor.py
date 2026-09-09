@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -19,7 +20,69 @@ from .store import Job, JobStore, utc_now
 
 logger = logging.getLogger(__name__)
 
-SECTION_KEYS = ["meeting_info", "attendance", "introduction", "agenda", "main_items"]
+@dataclass(frozen=True)
+class SectionSpec:
+    """One minutes section: its fixed heading, what belongs in it, and what
+    does not."""
+
+    title: str
+    instruction: str
+    max_tokens: int
+
+
+# Asking a 3B model for all five sections in one reply produced one narrative in
+# meeting_info and verbatim copies of it in the rest -- measured at 100% line
+# overlap between meeting_info and agenda, and 89% between agenda and
+# main_items. Each section now gets its own call, and each instruction says
+# explicitly what the *other* sections cover so the model has somewhere to put
+# the content it would otherwise duplicate here.
+#
+# Titles are fixed rather than model-generated: they are the same on every
+# meeting, so there is nothing for the model to add and one less thing to vary.
+_NOT_STATED = "غير مذكور في التسجيل"
+
+SECTION_SPECS: dict[str, SectionSpec] = {
+    "meeting_info": SectionSpec(
+        "بيانات الاجتماع",
+        "المطلوب الآن قسم «بيانات الاجتماع» فقط. أعد جدول Markdown بالأعمدة "
+        "التالية فقط: | اليوم والتاريخ | المكان | الوقت | ، وصفاً واحداً تحته. "
+        f"اكتب «{_NOT_STATED}» في أي خانة لم تُذكر صراحةً. "
+        "لا تكتب أي نص خارج الجدول، ولا تذكر الحضور ولا بنود جدول الأعمال ولا "
+        "النقاشات؛ لكل منها قسم خاص به.",
+        200,
+    ),
+    "attendance": SectionSpec(
+        "الحضور",
+        "المطلوب الآن قسم «الحضور» فقط. إن ذُكرت أسماء الحاضرين أو مناصبهم فأعد "
+        "جدول Markdown بالأعمدة: | # | الاسم | المنصب | الحضور | . "
+        f"وإن لم تُذكر أسماء صراحةً فاكتب سطراً واحداً فقط: «{_NOT_STATED}». "
+        "لا تذكر النقاشات ولا القرارات ولا بنود جدول الأعمال.",
+        250,
+    ),
+    "introduction": SectionSpec(
+        "المقدمة",
+        "المطلوب الآن قسم «المقدمة» فقط: جملة أو جملتان عن افتتاح الاجتماع "
+        "والترحيب بالحضور. لا تذكر بنود جدول الأعمال ولا أي تفصيل من النقاش؛ "
+        f"لهما قسمان منفصلان. إن لم يُذكر افتتاح فاكتب «{_NOT_STATED}».",
+        120,
+    ),
+    "agenda": SectionSpec(
+        "جدول الأعمال",
+        "المطلوب الآن قسم «جدول الأعمال» فقط. أعد جدول Markdown بالأعمدة: "
+        "| # | البند | . اكتب عنوان كل بند في أربع كلمات أو أقل، دون أي شرح أو "
+        "تفاصيل. لا تكتب ما دار من نقاش؛ النقاش يُكتب في قسم البنود الرئيسية.",
+        300,
+    ),
+    "main_items": SectionSpec(
+        "البنود الرئيسية",
+        "المطلوب الآن قسم «البنود الرئيسية» فقط. لكل بند اكتب عنواناً مرقّماً "
+        "غامقاً ثم فقرة تشرح ما دار من نقاش حوله وما استُعرض فيه. اشرح المضمون "
+        "ولا تكتفِ بإعادة عنوان البند، ولا تُعِد جدول الأعمال كقائمة.",
+        900,
+    ),
+}
+
+SECTION_KEYS = list(SECTION_SPECS)
 
 # Qwen2.5 is a Chinese-trained multilingual model and leaks CJK tokens into
 # Arabic prose under pressure -- a real run produced "الم发言人" for "the
@@ -184,12 +247,7 @@ class MeetingProcessor:
             return {
                 "meetingId": job.meeting_id,
                 "language": "ar",
-                "content": {
-                    "sections": [
-                        {"key": key, "title": "", "content": ""}
-                        for key in SECTION_KEYS
-                    ]
-                },
+                "content": {"sections": self._assemble_sections({})},
                 "decisions": [],
                 "generatedAt": utc_now(),
             }
@@ -224,6 +282,7 @@ class MeetingProcessor:
         ):
             stale.unlink(missing_ok=True)
         shutil.rmtree(job_dir / "llm-slices", ignore_errors=True)
+        shutil.rmtree(job_dir / "sections", ignore_errors=True)
         command = [
             "ffmpeg",
             "-nostdin",
@@ -331,7 +390,7 @@ class MeetingProcessor:
         notes: list[str] = []
         all_decisions: list[dict[str, Any]] = []
 
-        total_calls = max(1, len(slices) * 2 + 1)
+        total_calls = max(1, len(slices) * 2 + len(SECTION_SPECS))
         done_calls = 0
         for index, text_slice in enumerate(slices):
             note_path = notes_dir / f"{index:04d}-notes.txt"
@@ -359,15 +418,31 @@ class MeetingProcessor:
             done_calls += 1
             self._llm_progress(job.meeting_id, done_calls, total_calls)
 
-        sections_path = job_dir / "sections.json"
-        if sections_path.is_file():
-            sections = json.loads(sections_path.read_text(encoding="utf-8"))
-        else:
-            reduced_notes = self._reduce_notes(notes, notes_dir)
-            raw_sections = self._ask(self._sections_prompt(reduced_notes),
-                                     grammar=JSON_ARRAY_GRAMMAR)
-            sections = self._validate_sections(_extract_json(raw_sections))
-            _write_json_atomic(sections_path, sections)
+        # One call per section, each checkpointed on its own so a crash costs
+        # at most the section in flight rather than all five.
+        sections_dir = job_dir / "sections"
+        sections_dir.mkdir(exist_ok=True)
+        reduced_notes = self._reduce_notes(notes, notes_dir)
+        joined_notes = "\n\n--- جزء ---\n".join(reduced_notes)
+
+        bodies: dict[str, str] = {}
+        for key, spec in SECTION_SPECS.items():
+            section_path = sections_dir / f"{key}.txt"
+            if section_path.is_file():
+                body = section_path.read_text(encoding="utf-8")
+            else:
+                body = self._ask(
+                    self._section_prompt(joined_notes, spec.instruction),
+                    max_tokens=spec.max_tokens,
+                    grammar=PROSE_GRAMMAR,
+                )
+                _write_text_atomic(section_path, body)
+            bodies[key] = body
+            done_calls += 1
+            self._llm_progress(job.meeting_id, done_calls, total_calls)
+
+        sections = self._assemble_sections(bodies)
+        _write_json_atomic(job_dir / "sections.json", sections)
         self._llm_progress(job.meeting_id, total_calls, total_calls)
 
         return {
@@ -496,16 +571,19 @@ class MeetingProcessor:
             f"{self._language_rule()}\n\nالنص:\n{text}"
         )
 
-    def _sections_prompt(self, notes: list[str]) -> str:
-        joined = "\n\n--- جزء ---\n".join(notes)
+    def _section_prompt(self, notes: str, instruction: str) -> str:
+        """Notes first, instruction last.
+
+        The five section calls share this identical notes prefix, so
+        llama.cpp reuses the cached prompt KV across them and only the short
+        trailing instruction has to be prefilled each time. Putting the
+        instruction first would defeat that and make five calls cost five full
+        prefills of the whole transcript.
+        """
         return (
-            "حوّل الملاحظات التالية إلى JSON array فقط لمحضر اجتماع. "
-            "يجب أن تكون العناصر بالترتيب والمفاتيح التالية فقط: "
-            "meeting_info, attendance, introduction, agenda, main_items. "
-            'شكل العنصر {"key":"...","title":"...","content":"Markdown"}. '
-            "استخدم Markdown وجداول GFM عند الحاجة. لا تضع القرارات في الأقسام. "
-            "إذا لا توجد معلومة مدعومة استخدم محتوى فارغاً. "
-            f"{self._language_rule()}\n\nالملاحظات:\n{joined}"
+            f"ملاحظات اجتماع مجلس إدارة:\n{notes}\n\n"
+            f"{instruction}\n{self._language_rule()} "
+            "أعد نص القسم مباشرةً بصيغة Markdown، دون عنوان ودون JSON."
         )
 
     def _reduce_prompt(self, notes: list[str]) -> str:
@@ -518,24 +596,15 @@ class MeetingProcessor:
         )
 
     @staticmethod
-    def _validate_sections(value: Any) -> list[dict[str, str]]:
-        if isinstance(value, dict):
-            value = value.get("sections")
-        if not isinstance(value, list):
-            raise ValueError("LLM sections response is not an array")
-        by_key: dict[str, dict[str, str]] = {}
-        for item in value:
-            if not isinstance(item, dict) or item.get("key") not in SECTION_KEYS:
-                continue
-            key = item["key"]
-            by_key[key] = {
-                "key": key,
-                "title": _strip_foreign_scripts(str(item.get("title") or "")),
-                "content": _strip_foreign_scripts(str(item.get("content") or "")),
-            }
+    def _assemble_sections(bodies: dict[str, str]) -> list[dict[str, str]]:
+        """Always the five contract keys in order, with their fixed titles."""
         return [
-            by_key.get(key, {"key": key, "title": "", "content": ""})
-            for key in SECTION_KEYS
+            {
+                "key": key,
+                "title": spec.title,
+                "content": _strip_foreign_scripts(str(bodies.get(key) or "")).strip(),
+            }
+            for key, spec in SECTION_SPECS.items()
         ]
 
     @staticmethod
