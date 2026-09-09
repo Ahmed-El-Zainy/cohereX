@@ -589,12 +589,14 @@ def test_meeting_info_keeps_details_that_were_spoken():
     assert "غير مذكور" not in out
 
 
-def test_main_items_prompt_shows_the_exact_heading_format():
-    """Asking for substance without restating the format produced "- 1" and
-    loose bullets. A 3B model follows a worked example far better than a
-    description, so the prompt demonstrates the shape rather than naming it."""
+def test_main_items_prompt_describes_the_format_without_a_copyable_template():
+    """Three prompt shapes were tried on the real model. A worked example was
+    copied verbatim -- the headings came back as the literal placeholder
+    "عنوان البند" -- so the format is described instead, with the placeholder
+    word explicitly banned."""
     instruction = SECTION_SPECS["main_items"].instruction
-    assert "**1. عنوان البند**" in instruction      # a literal example, not prose
-    assert "**2. عنوان البند التالي**" in instruction
+    assert "**1." not in instruction                 # no fill-in-the-blank scaffold
+    assert "لا تكتب كلمة «عنوان»" in instruction     # the exact failure, forbidden
+    assert "العنوان الحقيقي" in instruction or "عنوان البند الحقيقي" in instruction
     assert "لا تستخدم شرطات" in instruction          # the bullets it fell back to
     assert "جملتين إلى أربع جمل" in instruction      # content guidance retained
