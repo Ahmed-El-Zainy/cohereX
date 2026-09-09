@@ -178,7 +178,7 @@ def _drop_unsupported_rows(table: str, transcript: str, name_column: int = 1) ->
         name = cells[name_column] if len(cells) > name_column else ""
         if _name_is_in(name, haystack):
             kept.append(line)
-        else:
+        elif name and name != _NOT_STATED:
             dropped.append(name)
     if dropped:
         logger.warning("Dropped %d attendance row(s) naming people absent from the "
@@ -188,6 +188,47 @@ def _drop_unsupported_rows(table: str, transcript: str, name_column: int = 1) ->
             for l in kept[2:]):
         return _NOT_STATED
     return "\n".join(kept).strip()
+
+
+_MEETING_INFO_COLUMNS = ("اليوم والتاريخ", "المكان", "الوقت")
+
+
+def _ground_meeting_info(table: str, transcript: str) -> str:
+    """Rebuild the meeting-details table, keeping only cells actually spoken.
+
+    The same template-filling that invented attendees invents a date, a venue
+    and a start time here -- a real run produced "2023-10-17 | مقر صندوق
+    الاستثمارات العامة | 14:00-16:00" for a recording that states none of them,
+    repeated across three rows with a spurious fourth column. Rather than
+    trusting the model's shape, the table is regenerated to exactly three
+    columns and one row, and every cell has to earn its place by appearing in
+    the transcript.
+    """
+    haystack = _normalise_arabic(transcript)
+    values = [_NOT_STATED] * 3
+    for line in table.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if all(set(c) <= set("- :") for c in cells):
+            continue
+        if any(column in " ".join(cells) for column in _MEETING_INFO_COLUMNS):
+            continue  # the heading row
+        for index in range(min(3, len(cells))):
+            candidate = cells[index]
+            if values[index] != _NOT_STATED or not candidate or candidate == _NOT_STATED:
+                continue
+            if _normalise_arabic(candidate) in haystack:
+                values[index] = candidate
+            else:
+                logger.warning(
+                    "Dropped unsupported %s from meeting_info: %r",
+                    _MEETING_INFO_COLUMNS[index], candidate,
+                )
+        break  # one row only; later rows were duplicates in practice
+    header = "| " + " | ".join(_MEETING_INFO_COLUMNS) + " |"
+    return f"{header}\n| --- | --- | --- |\n| " + " | ".join(values) + " |"
 
 
 def _strip_foreign_scripts(text: str) -> str:
@@ -507,6 +548,8 @@ class MeetingProcessor:
                 _write_text_atomic(section_path, body)
             if key == "attendance":
                 body = _drop_unsupported_rows(body, transcript)
+            elif key == "meeting_info":
+                body = _ground_meeting_info(body, transcript)
             bodies[key] = body
             done_calls += 1
             self._llm_progress(job.meeting_id, done_calls, total_calls)

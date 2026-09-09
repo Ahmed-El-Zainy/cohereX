@@ -15,6 +15,7 @@ from coherex_minutes.processor import (
     SECTION_SPECS,
     MeetingProcessor,
     _drop_unsupported_rows,
+    _ground_meeting_info,
     _name_is_in,
     _normalise_arabic,
     _strip_foreign_scripts,
@@ -558,3 +559,31 @@ def test_invented_decision_owners_are_dropped():
         [{"title": "إعداد الخطة", "kind": "ASSIGNMENT", "responsiblePersonName": "محمد"}]
     )
     assert unchecked[0]["responsiblePersonName"] == "محمد"
+
+
+def test_meeting_info_cells_must_be_spoken_in_the_recording():
+    """A real run invented a date, a venue and a time for a clip stating none,
+    repeated over three rows with a spurious fourth column."""
+    fabricated = (
+        "| اليوم والتاريخ | المكان | الوقت | غير مذكور في التسجيل |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 2023-10-17 | مقر صندوق الاستثمارات العامة | 14:00-16:00 | x |\n"
+        "| 2023-10-17 | مقر صندوق الاستثمارات العامة | 14:00-16:00 | x |\n"
+    )
+    out = _ground_meeting_info(fabricated, _REAL_TRANSCRIPT)
+    assert "2023-10-17" not in out
+    assert "14:00" not in out
+    assert out.count("\n") == 2                       # header, rule, one row
+    assert out.count("|") == 4 * 3                     # exactly three columns
+    assert out.count("غير مذكور في التسجيل") == 3
+
+
+def test_meeting_info_keeps_details_that_were_spoken():
+    transcript = "انعقد الاجتماع يوم الاثنين في القاعة الرئيسية الساعة العاشرة"
+    stated = (
+        "| اليوم والتاريخ | المكان | الوقت |\n| --- | --- | --- |\n"
+        "| يوم الاثنين | القاعة الرئيسية | الساعة العاشرة |\n"
+    )
+    out = _ground_meeting_info(stated, transcript)
+    assert "يوم الاثنين" in out and "القاعة الرئيسية" in out
+    assert "غير مذكور" not in out
