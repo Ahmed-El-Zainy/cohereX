@@ -42,3 +42,8 @@ out_*/
 # Secrets
 *.env
 .env
+
+# Script output
+smoke-out/
+pipeline-out/
+api-test-out/

@@ -89,17 +89,23 @@ look up. These are distinct from `COHEREX_VLLM_API_KEY` and
 `COHEREX_LLM_API_KEY`, which stay on the box and are never shared: those guard
 the two model servers on localhost, this one guards the public API.
 
-### Before the server exists: `scripts/dev_stack.py`
+### Before the server exists: `--local`
 
-Runs the real API, the real worker, the real store, the real download and the
-real ffmpeg chunking locally, with only the ASR and LLM calls stubbed. It
-generates a key and prints the two lines to paste:
+One command. It starts a throwaway stack on a free port, runs the full test
+against it, and shuts it down — no server, no second terminal, no token to
+copy, and any stale `AI_SERVICE_*` in your environment is ignored:
 
 ```bash
-scripts/dev_stack.py          # leave running
-# then, in another shell:
-scripts/smoke_test_api.py --serve samples/saudi_business_03min.mp3
+scripts/smoke_test_api.py --local --serve samples/saudi_business_03min.mp3
 ```
+
+`scripts/dev_stack.py` runs the same stack on its own if you want it to stay up
+— to point a browser or the platform team's client at it, say. **Keep that
+terminal open**: Ctrl-C there stops the API, and a smoke test in another shell
+then fails with `Connection refused`.
+
+Both run the real API, the real worker, the real store, the real download and
+the real ffmpeg chunking, with only the ASR and LLM calls stubbed.
 
 Because the models are stubbed it proves the **contract and the job lifecycle**,
 never transcription or minutes quality. It is also the quickest thing to hand

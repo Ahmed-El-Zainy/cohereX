@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import socket
 import sys
 import tempfile
 import threading
@@ -112,7 +113,30 @@ class StubModels(BaseHTTPRequestHandler):
         pass
 
 
-def main() -> int:
+class Stack:
+    """A running local stack. `stop()` is safe to call more than once."""
+
+    def __init__(self, base_url: str, api_key: str, models_url: str, data_dir: Path, stop):
+        self.base_url = base_url
+        self.api_key = api_key
+        self.models_url = models_url
+        self.data_dir = data_dir
+        self.stop = stop
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def start_stack(port: int = 8080) -> Stack:
+    """Bring up stub models + the real API + the real worker, in this process.
+
+    Importable so `smoke_test_api.py --local` can run the whole thing as one
+    command: needing two coordinated terminals is how the stack ends up dead
+    when the test runs.
+    """
     api_key = secrets.token_hex(32)
     data_dir = Path(tempfile.mkdtemp(prefix="coherex-dev-"))
 
@@ -137,51 +161,66 @@ def main() -> int:
         COHEREX_MINUTES_WORKER_POLL_SECONDS="1",
     )
 
-    try:
-        import uvicorn
-        from coherex_minutes.api import create_app
-        from coherex_minutes.config import Settings
-        from coherex_minutes.worker import Worker
-    except ImportError as exc:
-        print(f"Missing dependency: {exc}\nInstall with: pip install -e \".[minutes-api]\"",
-              file=sys.stderr)
-        return 2
+    import uvicorn
+    from coherex_minutes.api import create_app
+    from coherex_minutes.config import Settings
+    from coherex_minutes.worker import Worker
 
     settings = Settings.from_env()
     settings.prepare()
     worker = Worker(settings)
     threading.Thread(target=worker.run_forever, daemon=True).start()
 
-    config = uvicorn.Config(create_app(), host="127.0.0.1", port=8080, log_level="warning")
+    config = uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
     server.install_signal_handlers = lambda: None  # not the main thread's job here
     threading.Thread(target=server.run, daemon=True).start()
 
-    base_url = "http://127.0.0.1:8080"
-    for _ in range(100):
+    for _ in range(200):
         if server.started:
             break
         time.sleep(0.1)
     else:
-        print("API did not start", file=sys.stderr)
+        worker.stop()
+        models.shutdown()
+        raise RuntimeError(f"API did not start on port {port} (is it already in use?)")
+
+    def stop():
+        worker.stop()
+        server.should_exit = True
+        models.shutdown()
+
+    return Stack(f"http://127.0.0.1:{port}", api_key, models_url, data_dir, stop)
+
+
+def main() -> int:
+    try:
+        stack = start_stack()
+    except ImportError as exc:
+        print(f"Missing dependency: {exc}\nInstall with: pip install -e \".[minutes-api]\"",
+              file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
 
     print(f"""
 Local stack is up (models are STUBBED -- contract only, not real transcription).
 
-  API        {base_url}
-  models     {models_url}
-  data       {data_dir}
+  API        {stack.base_url}
+  models     {stack.models_url}
+  data       {stack.data_dir}
 
-Paste into .env, or export:
+>>> KEEP THIS TERMINAL OPEN. Ctrl-C here stops the API, and the smoke test
+>>> will then fail with "Connection refused". Open a SECOND terminal and run:
 
-  AI_SERVICE_BASE_URL={base_url}
-  AI_SERVICE_API_KEY={api_key}
+  export AI_SERVICE_BASE_URL={stack.base_url}
+  export AI_SERVICE_API_KEY={stack.api_key}
+  scripts/smoke_test_api.py --serve samples/saudi_business_03min.mp3
 
-Then, in another shell:
+Or skip all of this -- one command, no second terminal, nothing to keep open:
 
-  scripts/smoke_test_api.py --serve samples/saudi_business_03min.mp3 \\
-    --base-url {base_url} --api-key {api_key}
+  scripts/smoke_test_api.py --local --serve samples/saudi_business_03min.mp3
 
 Ctrl-C to stop.""", flush=True)   # flush: the key must appear even when redirected
 
@@ -191,8 +230,7 @@ Ctrl-C to stop.""", flush=True)   # flush: the key must appear even when redirec
     except KeyboardInterrupt:
         print("\nStopping.")
     finally:
-        worker.stop()
-        models.shutdown()
+        stack.stop()
     return 0
 
 

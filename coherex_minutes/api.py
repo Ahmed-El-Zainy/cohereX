@@ -18,10 +18,21 @@ from .ingest import IngestManager
 from .store import Job, JobStore
 
 
+# required_intergration.md documents `language` as `ar` | `en` | `auto`, with
+# `auto` as the default. This deployment serves one ASR model
+# (cohere-transcribe-arabic-07-2026), which already handles Arabic-primary
+# meetings that mix in English, so `auto` resolves to `ar` rather than being
+# rejected -- a client following the spec must not fail on the spec's own
+# default. `en` needs the 14-language checkpoint, which cannot be warm
+# alongside the Arabic one on this box, so it stays refused.
+ACCEPTED_LANGUAGES = {"ar", "auto"}
+RESOLVED_LANGUAGE = "ar"
+
+
 class SubmitMeeting(BaseModel):
     meetingId: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
     videoUrl: HttpUrl
-    language: str = "ar"
+    language: str = "auto"
 
 
 def success(data: dict[str, Any]) -> dict[str, Any]:
@@ -123,15 +134,19 @@ def create_app(
         dependencies=[Depends(authenticate)],
     )
     def submit(request: Request, payload: SubmitMeeting) -> JSONResponse:
-        if payload.language != "ar":
+        if payload.language not in ACCEPTED_LANGUAGES:
             return JSONResponse(
                 error(
                     "UNSUPPORTED_LANGUAGE",
-                    "Version 1 accepts Arabic-primary mixed Arabic/English meetings with language 'ar'.",
+                    "Version 1 transcribes Arabic-primary meetings, including ones that "
+                    "mix in English. Send 'ar' or 'auto', or omit the field; 'en' is not "
+                    "available in this deployment.",
                 ),
                 status_code=400,
             )
-        job, created = _store(request).create(payload.meetingId, str(payload.videoUrl), "ar")
+        job, created = _store(request).create(
+            payload.meetingId, str(payload.videoUrl), RESOLVED_LANGUAGE
+        )
         if created:
             request.app.state.ingest.schedule(job)
         return JSONResponse(_submitted(job), status_code=202)

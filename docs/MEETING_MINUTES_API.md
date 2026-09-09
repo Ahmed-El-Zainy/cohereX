@@ -122,10 +122,19 @@ organization” is the platform’s problem; our store has no org column in v1).
 - **New `meetingId` while another job runs:** **enqueue** (`QUEUED`), FIFO, one
   worker. Purpose: the spec already has `QUEUED`; failing with “busy” would
   drop a submit the platform already assembled.
-- **`language`:** v1 accepts missing or `"ar"`. `"en"` / `"auto"` as a **second
-  pipeline** is rejected (`UNSUPPORTED_LANGUAGE`). Mixed Arabic/English audio
-  is handled **by the Arabic-07 model**, not by switching to the 14-language
-  base model. GET still reports `"language": "ar"` (primary/output language).
+- **`language`:** v1 accepts missing, `"ar"`, or `"auto"` -- all three resolve
+  to `ar`. The guide documents `auto` as the **default**, so rejecting it would
+  fail a client that follows the spec exactly. `"en"` is still rejected
+  (`UNSUPPORTED_LANGUAGE`): it needs the 14-language base model, which cannot be
+  warm alongside Arabic-07 on this box. Mixed Arabic/English audio is handled
+  **by the Arabic-07 model**, not by switching models. GET always reports
+  `"language": "ar"` (the language actually used).
+
+  Known limitation of resolving `auto` to `ar`: a genuinely English-only
+  recording submitted as `auto` is transcribed by the Arabic model and yields
+  poor minutes rather than a clear error. v1 is for Arabic-primary board
+  meetings; if English-only recordings become real traffic, that needs the
+  second model, not a prompt change.
 - POST stays **fast**: do **not** download the video inside the HTTP request.
 
 ### 4.2 `GET /v1/meeting-minutes/{meetingId}/status`
@@ -190,7 +199,7 @@ Planned codes (v1):
 | `VIDEO_HOST_NOT_ALLOWED` | URL/redirect hostname is absent from the configured storage allowlist. |
 | `VIDEO_TOO_LARGE` | Over **2 GB** — disk/DoS guard, not “meetings must be short.” |
 | `VIDEO_TOO_LONG` | Audio longer than **~3 hours** after ffmpeg probe — runaway-file guard only. Real board meetings **under** that run to completion even if they take many hours. |
-| `UNSUPPORTED_LANGUAGE` | `en` / `auto` as a separate pipeline. |
+| `UNSUPPORTED_LANGUAGE` | `en`, or any value outside `ar`/`auto`. |
 | `MINUTES_NOT_READY` | GET minutes before `COMPLETED`. |
 | `GENERATION_FAILED` | GET minutes after `FAILED`. |
 | `NOT_FOUND` | Unknown `meetingId`. |
@@ -283,7 +292,7 @@ Worker post-processing **purpose:** drop illegal fields, coerce enums, empty
 | Item | Why later |
 | --- | --- |
 | Public regenerate / POST-retry of `FAILED` | Guide postponed it; idempotency would break. |
-| English-only or true `auto` language ID | Extra models/ML on an 8GB box; mixed AR/EN is already Arabic-07. |
+| English-only, or real language detection behind `auto` | Extra models/ML on an 8GB box; mixed AR/EN is already Arabic-07, and `auto` resolves to `ar`. |
 | Silero/pyannote/alignment on the server | RAM; not required for the spec (no word timestamps in GET). |
 | Concurrent ASR jobs | Hardware cannot. |
 | Warm ASR + LLM together | Needs more RAM or a second machine. |

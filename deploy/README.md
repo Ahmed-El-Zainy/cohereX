@@ -7,18 +7,30 @@ This directory contains deployable templates for the design in
 
 On the existing Ubuntu box:
 
+`/opt/coherex` is **not** a git checkout on this box — `coherex` was installed
+from PyPI into `/opt/coherex-venv`. Clone the repo there:
+
 ```bash
-cd /opt/coherex
-git pull
-source /opt/coherex-venv/bin/activate
-pip install -e ".[minutes-api]" --no-deps
-pip install "fastapi>=0.115" "httpx>=0.27" "uvicorn[standard]>=0.30"
+git clone https://github.com/Ahmed-El-Zainy/cohereX.git /opt/coherex
+
 mkdir -p /var/lib/coherex-minutes/jobs
 chmod 700 /var/lib/coherex-minutes
 ```
 
-The split install deliberately avoids letting pip replace the locally built
-CPU vLLM package (see `docs/DEPLOYMENT.md`).
+**Do not run `pip install`.** `coherex_minutes` imports only `fastapi`, `httpx`,
+`pydantic` and `starlette`, and never imports the `coherex` package itself — all
+four are already in the venv. Confirm rather than install:
+
+```bash
+/opt/coherex-venv/bin/python -c "import fastapi, httpx, pydantic, starlette; print('deps ok')"
+```
+
+This matters: the venv holds a **locally compiled CPU build of vLLM**
+(`0.1.dev1+g...cpu`, an hour to rebuild). Any pip command that re-resolves
+`vllm>=X.Y.Z` silently replaces it with the GPU wheel and breaks the ASR server
+— see `docs/DEPLOYMENT.md` §3. Since nothing needs installing, don't give pip
+the chance. The systemd units set `WorkingDirectory=/opt/coherex`, which is what
+puts `coherex_minutes` on the import path.
 
 ## 2. Make model servers private
 

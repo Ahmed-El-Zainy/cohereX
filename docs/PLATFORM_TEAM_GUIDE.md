@@ -1,6 +1,10 @@
 # Meeting minutes AI service — teammate integration guide
 
-**Status (2026-09-08): not live on the server.**
+**Status (2026-09-09): not live on the server.**
+
+> **Sending this to someone?** [`PLATFORM_TEAM_GUIDE.html`](PLATFORM_TEAM_GUIDE.html)
+> is the same content as a standalone page, for teammates without repo access.
+> Keep the two in step — this file is the source of truth for the contract.
 
 The three APIs from `required_intergration.md` are **implemented in this repo**
 (`coherex_minutes/`) and covered by automated tests. They are **not** installed
@@ -62,7 +66,7 @@ Content-Type: application/json
 | --- | --- | --- |
 | `meetingId` | yes | `A–Z a–z 0–9 _ -`, max 128. Same id on status and GET. |
 | `videoUrl` | yes | HTTPS URL the AI box can download. If signed, it must stay valid until **download starts** (accepted immediately; download is background). Hostname must be on the AI allowlist (storage/CDN). |
-| `language` | no | **v1: send `"ar"` or omit.** Mixed Arabic/English audio is supported. `"en"` and `"auto"` return `UNSUPPORTED_LANGUAGE`. |
+| `language` | no | `"ar"`, `"auto"`, or omit -- all three transcribe as Arabic, and the response reports `"language": "ar"`. Meetings that mix Arabic and English are supported. **`"en"` returns `UNSUPPORTED_LANGUAGE`**: this deployment runs one Arabic model. Send an English-only recording and you get poor Arabic minutes, not an error. |
 
 **202 Accepted** (new or existing job):
 
@@ -286,7 +290,7 @@ a wrong HTTP method — so `error.code` is always safe to read.
 | `UNAUTHORIZED` | 401 | Missing/wrong Bearer |
 | `SERVICE_UNAVAILABLE` | 503 | API restarting or misconfigured. **Retryable** — back off and repeat the same call; it is not a job failure |
 | `INVALID_VIDEO_URL` | 400 | Bad URL |
-| `UNSUPPORTED_LANGUAGE` | 400 | `en` / `auto` |
+| `UNSUPPORTED_LANGUAGE` | 400 | `language` outside `ar` / `auto` (i.e. `en`) |
 | `INVALID_REQUEST` | 422 | Other body validation (e.g. illegal `meetingId`) |
 | `REQUEST_FAILED` | 404 / 405 | Wrong **path** or method — a client bug, not an unknown meeting. Unknown `meetingId` is `NOT_FOUND`; check this first if every call fails |
 | `NOT_FOUND` | 404 | Unknown `meetingId` |
@@ -303,7 +307,8 @@ a wrong HTTP method — so `error.code` is always safe to read.
 
 1. Ensure the video URL is HTTPS, signed long enough for **queue wait + download**,
    and hosted on the agreed storage host.
-2. `POST` with `meetingId` + `videoUrl` + `"language": "ar"`.
+2. `POST` with `meetingId` + `videoUrl`. `language` may be `"ar"`, `"auto"`, or
+   omitted — all three are accepted.
 3. If `202` and status already `COMPLETED`, skip to step 5 (idempotent replay).
 4. Poll **status** until `COMPLETED` or `FAILED`. Do not busy-loop; expect long jobs.
 5. On `COMPLETED`, `GET` minutes and persist. Safe to GET again later.
@@ -350,6 +355,14 @@ curl -sS "$AI_SERVICE_BASE_URL/v1/meeting-minutes/cm123platformMeetingId" \
 | [`MEETING_MINUTES_API.md`](MEETING_MINUTES_API.md) | Design decisions on the CPU box |
 | [`deploy/README.md`](../deploy/README.md) | How to put the API on the VM |
 | [`TESTING.md`](TESTING.md) | Pytest (not a live meeting) |
+
+## What we need back from you
+
+| From the platform team | Why |
+| --- | --- |
+| The exact hostname(s) of your video storage/CDN, **including any redirect target** | Downloads are denied unless the host is on our allowlist. This is fail-closed: get it wrong and every job fails with `VIDEO_HOST_NOT_ALLOWED` |
+| How long your signed URLs stay valid | The download starts seconds after `POST`, but confirm the window covers a retry |
+| Confirmation you accept the capacity above | One meeting at a time, hours per meeting |
 
 **Blocker for real calls:** someone with SSH must apply `deploy/README.md`, set
 `AI_SERVICE_API_KEY`, `COHEREX_VIDEO_ALLOWED_HOSTS`, DNS/TLS, then share

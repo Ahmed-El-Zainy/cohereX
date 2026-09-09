@@ -87,7 +87,7 @@ def test_submit_rejects_path_traversal_and_unsupported_language(tmp_path):
         json={
             "meetingId": "english",
             "videoUrl": "https://example.com/a.mp4",
-            "language": "auto",
+            "language": "de",
         },
         headers=auth(),
     )
@@ -206,3 +206,32 @@ def test_every_failure_uses_the_error_envelope_including_routing_errors(tmp_path
     assert responses["bad method"].json()["error"]["code"] == "REQUEST_FAILED"
     assert responses["unknown id"].json()["error"]["code"] == "NOT_FOUND"
     assert responses["no bearer"].json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_language_auto_is_accepted_and_resolved_to_arabic(tmp_path):
+    """required_intergration.md documents `auto` as the DEFAULT, so a client
+    following the spec must not be rejected for sending it."""
+    client, store, _ = make_client(tmp_path)
+
+    for index, body in enumerate([
+        {"meetingId": f"lang-{index}", "videoUrl": "https://s.example.com/a.mp4",
+         "language": lang} if lang else
+        {"meetingId": f"lang-{index}", "videoUrl": "https://s.example.com/a.mp4"}
+        for index, lang in enumerate(["ar", "auto", None])
+    ]):
+        response = client.post("/v1/meeting-minutes", headers=auth(), json=body)
+        assert response.status_code == 202, (body, response.json())
+        # Whatever was asked for, the job records the language actually used.
+        assert store.get(body["meetingId"]).language == "ar"
+
+
+def test_language_en_is_still_refused(tmp_path):
+    client, _, _ = make_client(tmp_path)
+    response = client.post(
+        "/v1/meeting-minutes",
+        headers=auth(),
+        json={"meetingId": "english", "videoUrl": "https://s.example.com/a.mp4",
+              "language": "en"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "UNSUPPORTED_LANGUAGE"

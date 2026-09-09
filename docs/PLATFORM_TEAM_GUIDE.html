@@ -1,0 +1,954 @@
+<title>CohereX Minutes API</title>
+<!--
+  Shareable rendering of docs/PLATFORM_TEAM_GUIDE.md - the two must be kept in
+  step; the .md is the source of truth for the contract.
+
+  Published (private) at:
+    https://claude.ai/code/artifact/9474e4db-f999-4e1c-bca6-e6da16497feb
+
+  Republishing from this path WITHOUT passing that URL creates a second,
+  separate artifact instead of updating the one already shared.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&family=Noto+Naskh+Arabic:wght@400;600&display=swap">
+
+<style>
+  :root {
+    /* Neutrals biased green so they sit with the accent rather than beside it. */
+    --paper:      #FBFAF7;
+    --surface:    #F3F2EC;
+    --surface-2:  #E9E8E0;
+    --line:       #DCDBD2;
+    --line-soft:  #E8E7DF;
+    --ink:        #16201D;
+    --ink-2:      #45514C;
+    --ink-3:      #6D7873;
+
+    --accent:     #0F6F5C;
+    --accent-ink: #0B5647;
+    --accent-wash:#E4EFEB;
+
+    --amber:      #A8620E;
+    --amber-wash: #F7EDDF;
+    --rose:       #9B2F3F;
+    --rose-wash:  #F6E7E8;
+
+    --code-bg:    #F3F2EC;
+    --code-ink:   #23302C;
+    --tok-key:    #0B5647;
+    --tok-str:    #7A4210;
+    --tok-num:    #6B2B57;
+    --tok-punc:   #7C8783;
+
+    --radius: 6px;
+    --maxw: 62rem;
+
+    --f-display: "Newsreader", ui-serif, Georgia, serif;
+    --f-body: "Source Sans 3", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --f-arabic: "Noto Naskh Arabic", "Geeza Pro", "Segoe UI", serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #101615;
+      --surface:    #171F1D;
+      --surface-2:  #1F2A27;
+      --line:       #2A3733;
+      --line-soft:  #223029;
+      --ink:        #E6EAE7;
+      --ink-2:      #AEB9B4;
+      --ink-3:      #85928C;
+      --accent:     #4FBFA3;
+      --accent-ink: #7FD6BF;
+      --accent-wash:#152A26;
+      --amber:      #D9A05B;
+      --amber-wash: #2A2118;
+      --rose:       #D98A94;
+      --rose-wash:  #2A1A1D;
+      --code-bg:    #151E1C;
+      --code-ink:   #D3DBD8;
+      --tok-key:    #7FD6BF;
+      --tok-str:    #D9A05B;
+      --tok-num:    #D69FC4;
+      --tok-punc:   #77857F;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #101615;
+    --surface:    #171F1D;
+    --surface-2:  #1F2A27;
+    --line:       #2A3733;
+    --line-soft:  #223029;
+    --ink:        #E6EAE7;
+    --ink-2:      #AEB9B4;
+    --ink-3:      #85928C;
+    --accent:     #4FBFA3;
+    --accent-ink: #7FD6BF;
+    --accent-wash:#152A26;
+    --amber:      #D9A05B;
+    --amber-wash: #2A2118;
+    --rose:       #D98A94;
+    --rose-wash:  #2A1A1D;
+    --code-bg:    #151E1C;
+    --code-ink:   #D3DBD8;
+    --tok-key:    #7FD6BF;
+    --tok-str:    #D9A05B;
+    --tok-num:    #D69FC4;
+    --tok-punc:   #77857F;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    gap: 3.5rem;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 1.5rem 6rem;
+  }
+  @media (max-width: 62rem) {
+    .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .rail { position: static; height: auto; padding-top: 0; border-right: 0;
+            border-bottom: 1px solid var(--line); margin-bottom: 2rem; }
+    .rail ol { display: flex; flex-wrap: wrap; gap: 0 1.25rem; }
+  }
+
+  /* ---------- masthead ---------- */
+  header.masthead {
+    grid-column: 1 / -1;
+    padding: 3.25rem 0 1.75rem;
+  }
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 500;
+    font-size: clamp(2.1rem, 5vw, 3rem);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.6rem;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-family: var(--f-display);
+    font-size: 1.2rem;
+    font-style: italic;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 44ch;
+  }
+
+  /* ---------- status banner (semantic amber, not accent) ---------- */
+  .status {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0 1rem;
+    align-items: start;
+    background: var(--amber-wash);
+    border-left: 3px solid var(--amber);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 1.1rem 1.35rem;
+    margin-bottom: 2.75rem;
+  }
+  .status .pill {
+    font-family: var(--f-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--amber);
+    border: 1px solid var(--amber);
+    border-radius: 100px;
+    padding: 0.15rem 0.6rem;
+    white-space: nowrap;
+    margin-top: 0.15rem;
+  }
+  .status p { margin: 0 0 0.5rem; color: var(--ink-2); }
+  .status p:last-child { margin-bottom: 0; }
+  .status strong { color: var(--ink); }
+
+  /* ---------- rail ---------- */
+  .rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 0.25rem 1.25rem 2rem 0;
+    border-right: 1px solid var(--line-soft);
+  }
+  .rail h2 {
+    font-family: var(--f-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    margin: 0 0 0.85rem;
+  }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.42rem; }
+  .rail a {
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 0.9rem;
+    display: block;
+    border-left: 2px solid transparent;
+    padding-left: 0.7rem;
+    margin-left: -0.7rem;
+  }
+  .rail a:hover { color: var(--accent); border-left-color: var(--accent); }
+  .rail a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- content ---------- */
+  main { min-width: 0; }
+  section { scroll-margin-top: 1.5rem; }
+  section + section { margin-top: 3.25rem; }
+
+  h2.sec {
+    font-family: var(--f-display);
+    font-size: 1.65rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin: 0 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--line);
+    text-wrap: balance;
+  }
+  h2.sec .num {
+    font-family: var(--f-mono);
+    font-size: 0.85rem;
+    color: var(--accent);
+    margin-right: 0.55rem;
+    vertical-align: 0.28em;
+    font-weight: 600;
+  }
+  h3 {
+    font-family: var(--f-body);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    margin: 1.9rem 0 0.7rem;
+  }
+  p { margin: 0 0 0.9rem; max-width: 68ch; }
+  p.lede { color: var(--ink-2); }
+  a { color: var(--accent-ink); }
+  strong { font-weight: 700; }
+  code:not(pre code) {
+    font-family: var(--f-mono);
+    font-size: 0.855em;
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+    color: var(--code-ink);
+    word-break: break-word;
+  }
+
+  ul.plain { margin: 0 0 1rem; padding-left: 1.15rem; max-width: 68ch; display: grid; gap: 0.4rem; }
+  ul.plain li::marker { color: var(--ink-3); }
+
+  /* ---------- endpoint summary cards (the one place cards earn their keep) ---------- */
+  .calls { display: grid; gap: 0.6rem; margin: 0 0 1.5rem; }
+  .call {
+    display: grid;
+    grid-template-columns: 3.6rem minmax(0, 1fr);
+    gap: 0 0.9rem;
+    align-items: baseline;
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    padding: 0.75rem 0.95rem;
+  }
+  .verb {
+    font-family: var(--f-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    text-align: right;
+  }
+  .call .path { font-family: var(--f-mono); font-size: 0.855rem; color: var(--ink); word-break: break-all; }
+  .call .note { grid-column: 2; font-size: 0.87rem; color: var(--ink-3); margin-top: 0.2rem; }
+
+  /* ---------- tables ---------- */
+  .tw { overflow-x: auto; margin: 0 0 1.25rem; border: 1px solid var(--line); border-radius: var(--radius); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th {
+    font-family: var(--f-mono);
+    font-size: 0.67rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+    background: var(--surface);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+  .num-col { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* ---------- code ---------- */
+  .code {
+    position: relative;
+    background: var(--code-bg);
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    margin: 0 0 1.25rem;
+    overflow: hidden;
+  }
+  .code .cap {
+    font-family: var(--f-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 0.5rem 0.9rem;
+    border-bottom: 1px solid var(--line-soft);
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .code .cap .ok { color: var(--accent); }
+  .code .cap .bad { color: var(--rose); }
+  pre { margin: 0; padding: 0.9rem; overflow-x: auto; }
+  pre code {
+    font-family: var(--f-mono);
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--code-ink);
+    white-space: pre;
+  }
+  .k { color: var(--tok-key); }
+  .s { color: var(--tok-str); }
+  .n { color: var(--tok-num); }
+  .p { color: var(--tok-punc); }
+  .cm { color: var(--ink-3); font-style: italic; }
+  .ar { font-family: var(--f-arabic); font-size: 1.02em; }
+
+  /* ---------- callouts ---------- */
+  .note-box {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-wash);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 0.85rem 1.1rem;
+    margin: 0 0 1.25rem;
+  }
+  .note-box.warn { border-left-color: var(--amber); background: var(--amber-wash); }
+  .note-box.stop { border-left-color: var(--rose); background: var(--rose-wash); }
+  .note-box p { margin: 0; max-width: 66ch; font-size: 0.94rem; }
+  .note-box p + p { margin-top: 0.5rem; }
+  .note-box .tag {
+    font-family: var(--f-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.3rem;
+  }
+  .note-box .tag { color: var(--accent); }
+  .note-box.warn .tag { color: var(--amber); }
+  .note-box.stop .tag { color: var(--rose); }
+
+  /* ---------- lifecycle diagram ---------- */
+  .flowwrap { overflow-x: auto; margin: 0 0 1.4rem; }
+  svg.flow { display: block; min-width: 34rem; }
+  svg.flow text { font-family: var(--f-mono); font-size: 10px; fill: var(--ink-2); }
+  svg.flow text.st { font-size: 10.5px; font-weight: 600; fill: var(--ink); }
+  svg.flow text.pc { fill: var(--ink-3); font-size: 9px; }
+  svg.flow rect.box { fill: var(--surface); stroke: var(--line); }
+  svg.flow rect.done { fill: var(--accent-wash); stroke: var(--accent); }
+  svg.flow rect.fail { fill: var(--rose-wash); stroke: var(--rose); }
+  svg.flow path.arrow { stroke: var(--ink-3); fill: none; stroke-width: 1.2; }
+  svg.flow path.arrowfail { stroke: var(--rose); fill: none; stroke-width: 1.2; stroke-dasharray: 3 2.5; }
+
+  /* ---------- status/enum chips ---------- */
+  .chip {
+    font-family: var(--f-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 3px;
+    padding: 0.1rem 0.4rem;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+  .chip.q  { color: var(--ink-3);  border-color: var(--line); background: var(--surface); }
+  .chip.pr { color: var(--amber);  border-color: var(--amber); background: var(--amber-wash); }
+  .chip.ok { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
+  .chip.no { color: var(--rose);   border-color: var(--rose); background: var(--rose-wash); }
+
+  footer {
+    grid-column: 1 / -1;
+    margin-top: 4rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+    color: var(--ink-3);
+    font-size: 0.87rem;
+  }
+  footer p { max-width: 68ch; margin: 0 0 0.5rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">Integration guide &middot; v1 &middot; 9 September 2026</p>
+    <h1>Meeting Minutes AI Service</h1>
+    <p class="standfirst">Three endpoints that turn a board-meeting recording into structured Arabic minutes and extracted decisions.</p>
+  </header>
+
+  <div class="status">
+    <span class="pill">NOT LIVE YET</span>
+    <div>
+      <p>The three endpoints are <strong>implemented and covered by automated tests</strong>, but the service is not yet installed on the VM. There is no <code>AI_SERVICE_BASE_URL</code> and no API key to hand you until deployment finishes.</p>
+      <p><strong>You can start now.</strong> This contract is final — build and mock against it. We will send you the base URL and bearer key over a secret channel (never in this document, email or chat history) once the box is up.</p>
+    </div>
+  </div>
+
+  <nav class="rail" aria-label="Sections">
+    <h2>On this page</h2>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#shared">Shared rules</a></li>
+      <li><a href="#submit">1 &middot; Submit</a></li>
+      <li><a href="#status">2 &middot; Status</a></li>
+      <li><a href="#minutes">3 &middot; Minutes</a></li>
+      <li><a href="#errors">Error codes</a></li>
+      <li><a href="#client">Client implementation</a></li>
+      <li><a href="#capacity">Capacity</a></li>
+      <li><a href="#needs">What we need from you</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <!-- ================= OVERVIEW ================= -->
+    <section id="overview">
+      <h2 class="sec">Overview</h2>
+      <p class="lede">You give us a meeting video URL and <em>your</em> <code>meetingId</code>. We transcribe it, draft the minutes, and extract the decisions. You poll until it is done, then read the result once.</p>
+
+      <div class="calls">
+        <div class="call">
+          <span class="verb">POST</span>
+          <span class="path">/v1/meeting-minutes</span>
+          <span class="note">Accepts the job. Returns <code>202</code> immediately — it does not wait for minutes.</span>
+        </div>
+        <div class="call">
+          <span class="verb">GET</span>
+          <span class="path">/v1/meeting-minutes/{meetingId}/status</span>
+          <span class="note">Poll every 5–15 s until <code>COMPLETED</code> or <code>FAILED</code>.</span>
+        </div>
+        <div class="call">
+          <span class="verb">GET</span>
+          <span class="path">/v1/meeting-minutes/{meetingId}</span>
+          <span class="note">The minutes and decisions. Only after <code>COMPLETED</code>.</span>
+        </div>
+      </div>
+
+      <div class="note-box">
+        <span class="tag">The one thing to internalise</span>
+        <p><strong>A <code>meetingId</code> is one job, forever.</strong> We never mint a second ID. POSTing the same ID again returns the existing job — it never regenerates, and it never retries a failure. Everything else follows from this.</p>
+      </div>
+    </section>
+
+    <!-- ================= SHARED ================= -->
+    <section id="shared">
+      <h2 class="sec">Shared rules</h2>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Rule</th><th>Detail</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Base URL</td><td><code>{AI_SERVICE_BASE_URL}</code> — HTTPS only. Sent separately after deploy.</td></tr>
+            <tr><td>Auth</td><td><code>Authorization: Bearer {AI_SERVICE_API_KEY}</code> on every request, including both GETs.</td></tr>
+            <tr><td>Content type</td><td><code>application/json</code></td></tr>
+            <tr><td>Timestamps</td><td>ISO 8601 UTC, second precision, always <code>Z</code>-suffixed: <code>2026-09-07T10:30:00Z</code></td></tr>
+            <tr><td>IDs</td><td>You own <code>meetingId</code>. We do not create a second job or meeting ID.</td></tr>
+            <tr><td>Result lifetime</td><td>No expiry in v1. Repeat reads return the identical payload, byte for byte.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note-box">
+        <span class="tag">Error envelope</span>
+        <p>Every failure on every route uses one shape — including a mistyped path or a wrong HTTP method — so <code>error.code</code> is always safe to read without checking the status code first.</p>
+      </div>
+
+      <div class="code">
+        <div class="cap"><span>Failure response &mdash; every endpoint</span><span class="bad">success: false</span></div>
+<pre><code><span class="p">{</span>
+  <span class="k">"success"</span><span class="p">:</span> <span class="n">false</span><span class="p">,</span>
+  <span class="k">"error"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="k">"code"</span><span class="p">:</span> <span class="s">"INVALID_VIDEO_URL"</span><span class="p">,</span>
+    <span class="k">"message"</span><span class="p">:</span> <span class="s">"The video URL is invalid or cannot be accessed."</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+      </div>
+    </section>
+
+    <!-- ================= SUBMIT ================= -->
+    <section id="submit">
+      <h2 class="sec"><span class="num">01</span>Submit a meeting</h2>
+
+      <div class="code">
+        <div class="cap"><span>POST /v1/meeting-minutes</span><span>request</span></div>
+<pre><code><span class="p">{</span>
+  <span class="k">"meetingId"</span><span class="p">:</span> <span class="s">"cm123platformMeetingId"</span><span class="p">,</span>
+  <span class="k">"videoUrl"</span><span class="p">:</span> <span class="s">"https://storage.example.com/meetings/board-meeting.mp4"</span><span class="p">,</span>
+  <span class="k">"language"</span><span class="p">:</span> <span class="s">"ar"</span>
+<span class="p">}</span></code></pre>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Req.</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>meetingId</code></td><td>yes</td>
+              <td><code>A–Z a–z 0–9 _ -</code>, max 128 characters. Reused unchanged on both GETs.</td>
+            </tr>
+            <tr>
+              <td><code>videoUrl</code></td><td>yes</td>
+              <td>HTTPS URL we can download. Download starts seconds after you POST, but keep signed URLs valid long enough to survive a retry. <strong>The hostname must be on our allowlist</strong> — see <a href="#needs">What we need from you</a>. Audio-only files (<code>.mp3</code>, <code>.m4a</code>) work too.</td>
+            </tr>
+            <tr>
+              <td><code>language</code></td><td>no</td>
+              <td><code>"ar"</code>, <code>"auto"</code>, or omit — all three transcribe as Arabic and the response reports <code>"language": "ar"</code>. Meetings that <em>mix</em> Arabic and English are handled. <code>"en"</code> returns <code>UNSUPPORTED_LANGUAGE</code>: this deployment runs a single Arabic model.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="cap"><span>202 Accepted</span><span class="ok">new or existing job</span></div>
+<pre><code><span class="p">{</span>
+  <span class="k">"success"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+  <span class="k">"data"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="k">"meetingId"</span><span class="p">:</span> <span class="s">"cm123platformMeetingId"</span><span class="p">,</span>
+    <span class="k">"status"</span><span class="p">:</span> <span class="s">"QUEUED"</span><span class="p">,</span>          <span class="cm">// or the existing job's current status</span>
+    <span class="k">"createdAt"</span><span class="p">:</span> <span class="s">"2026-09-07T10:30:00Z"</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+      </div>
+
+      <div class="note-box stop">
+        <span class="tag">Do not build a &ldquo;resubmit to repair&rdquo; path</span>
+        <p>A re-POST <strong>ignores every field except <code>meetingId</code></strong>. Submitting the same ID with a <em>corrected</em> <code>videoUrl</code> does not update the job, does not retry it, and still returns <code>202</code> — so it looks like success while silently doing nothing. The job stays bound to the original URL.</p>
+        <p>Fixing a bad URL requires a <strong>new <code>meetingId</code></strong>. A <code>FAILED</code> job stays failed until an operator resets it, which is not a public API.</p>
+      </div>
+    </section>
+
+    <!-- ================= STATUS ================= -->
+    <section id="status">
+      <h2 class="sec"><span class="num">02</span>Poll the status</h2>
+      <p class="lede">Returns <code>200</code> whenever the job exists — <strong>including failures</strong>, because the lookup itself succeeded. Only an unknown <code>meetingId</code> is a <code>404</code>.</p>
+
+      <div class="flowwrap">
+        <svg class="flow" viewBox="0 0 620 132" role="img" aria-label="Job lifecycle: QUEUED to TRANSCRIBING to GENERATING_MINUTES to COMPLETED, with FAILED reachable from either processing stage.">
+          <rect class="box" x="1" y="26" width="104" height="42" rx="5"/>
+          <text class="st" x="53" y="43" text-anchor="middle">QUEUED</text>
+          <text class="pc" x="53" y="58" text-anchor="middle">0%</text>
+
+          <rect class="box" x="141" y="26" width="132" height="42" rx="5"/>
+          <text class="st" x="207" y="43" text-anchor="middle">TRANSCRIBING</text>
+          <text class="pc" x="207" y="58" text-anchor="middle">0–85%</text>
+
+          <rect class="box" x="309" y="26" width="176" height="42" rx="5"/>
+          <text class="st" x="397" y="43" text-anchor="middle">GENERATING_MINUTES</text>
+          <text class="pc" x="397" y="58" text-anchor="middle">85–99%</text>
+
+          <rect class="done" x="521" y="26" width="96" height="42" rx="5"/>
+          <text class="st" x="569" y="43" text-anchor="middle">COMPLETED</text>
+          <text class="pc" x="569" y="58" text-anchor="middle">100%</text>
+
+          <rect class="fail" x="255" y="94" width="88" height="32" rx="5"/>
+          <text class="st" x="299" y="114" text-anchor="middle">FAILED</text>
+
+          <path class="arrow" d="M105 47 L135 47"/>
+          <path class="arrow" d="M135 47 l-6 -3 v6 z" fill="currentColor" stroke="none" style="fill: var(--ink-3);"/>
+          <path class="arrow" d="M273 47 L303 47"/>
+          <path class="arrow" d="M303 47 l-6 -3 v6 z" style="fill: var(--ink-3);" stroke="none"/>
+          <path class="arrow" d="M485 47 L515 47"/>
+          <path class="arrow" d="M515 47 l-6 -3 v6 z" style="fill: var(--ink-3);" stroke="none"/>
+
+          <path class="arrowfail" d="M207 68 L207 110 L251 110"/>
+          <path class="arrowfail" d="M251 110 l-6 -3 v6 z" style="fill: var(--rose);" stroke="none" stroke-dasharray="0"/>
+          <path class="arrowfail" d="M397 68 L397 110 L347 110"/>
+          <path class="arrowfail" d="M347 110 l6 -3 v6 z" style="fill: var(--rose);" stroke="none" stroke-dasharray="0"/>
+        </svg>
+      </div>
+
+      <div class="code">
+        <div class="cap"><span>GET /v1/meeting-minutes/{meetingId}/status &rarr; 200</span><span>in progress</span></div>
+<pre><code><span class="p">{</span>
+  <span class="k">"success"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+  <span class="k">"data"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="k">"meetingId"</span><span class="p">:</span> <span class="s">"cm123platformMeetingId"</span><span class="p">,</span>
+    <span class="k">"status"</span><span class="p">:</span> <span class="s">"PROCESSING"</span><span class="p">,</span>
+    <span class="k">"progress"</span><span class="p">:</span> <span class="n">65</span><span class="p">,</span>
+    <span class="k">"stage"</span><span class="p">:</span> <span class="s">"GENERATING_MINUTES"</span><span class="p">,</span>
+    <span class="k">"updatedAt"</span><span class="p">:</span> <span class="s">"2026-09-07T10:34:20Z"</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>status</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><span class="chip q">QUEUED</span></td><td>Waiting behind another meeting, or waiting for disk space to download the video. Both clear on their own — keep polling, do not resubmit.</td></tr>
+            <tr><td><span class="chip pr">PROCESSING</span></td><td>Downloading, splitting audio, transcribing, or generating.</td></tr>
+            <tr><td><span class="chip ok">COMPLETED</span></td><td>Safe to fetch the minutes.</td></tr>
+            <tr><td><span class="chip no">FAILED</span></td><td>Terminal. Read <code>data.error</code>. Do not POST the same ID to retry.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p><code>progress</code> is an integer 0–100 and never moves backwards. <code>stage</code> is a closed set you can safely <code>switch</code> on: <code>QUEUED</code>, <code>TRANSCRIBING</code>, <code>GENERATING_MINUTES</code>, <code>COMPLETED</code>. On failure it reports the stage where the job died.</p>
+
+      <div class="code">
+        <div class="cap"><span>Still 200 &mdash; the lookup worked, the job did not</span><span class="bad">status: FAILED</span></div>
+<pre><code><span class="p">{</span>
+  <span class="k">"success"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+  <span class="k">"data"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="k">"meetingId"</span><span class="p">:</span> <span class="s">"cm123platformMeetingId"</span><span class="p">,</span>
+    <span class="k">"status"</span><span class="p">:</span> <span class="s">"FAILED"</span><span class="p">,</span>
+    <span class="k">"progress"</span><span class="p">:</span> <span class="n">42</span><span class="p">,</span>
+    <span class="k">"stage"</span><span class="p">:</span> <span class="s">"TRANSCRIBING"</span><span class="p">,</span>
+    <span class="k">"error"</span><span class="p">:</span> <span class="p">{</span>
+      <span class="k">"code"</span><span class="p">:</span> <span class="s">"TRANSCRIPTION_FAILED"</span><span class="p">,</span>
+      <span class="k">"message"</span><span class="p">:</span> <span class="s">"Audio could not be transcribed."</span>
+    <span class="p">},</span>
+    <span class="k">"updatedAt"</span><span class="p">:</span> <span class="s">"2026-09-07T10:33:00Z"</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+      </div>
+    </section>
+
+    <!-- ================= MINUTES ================= -->
+    <section id="minutes">
+      <h2 class="sec"><span class="num">03</span>Read the minutes</h2>
+      <p class="lede">Call only once status is <code>COMPLETED</code>. Repeat reads return the identical payload and never start a new job — but persist it on your side anyway; this endpoint is not your system of record.</p>
+
+      <div class="note-box warn">
+        <span class="tag">Generated text is Arabic</span>
+        <p>The original spec used English examples to show the <em>shape</em>. Real output is Modern Standard Arabic, right-to-left, with GitHub-flavoured Markdown tables inside the section strings. Plan your rendering and storage accordingly.</p>
+      </div>
+
+      <div class="code">
+        <div class="cap"><span>GET /v1/meeting-minutes/{meetingId} &rarr; 200</span><span class="ok">success: true</span></div>
+<pre><code><span class="p">{</span>
+  <span class="k">"success"</span><span class="p">:</span> <span class="n">true</span><span class="p">,</span>
+  <span class="k">"data"</span><span class="p">:</span> <span class="p">{</span>
+    <span class="k">"meetingId"</span><span class="p">:</span> <span class="s">"cm123platformMeetingId"</span><span class="p">,</span>
+    <span class="k">"language"</span><span class="p">:</span> <span class="s">"ar"</span><span class="p">,</span>
+    <span class="k">"content"</span><span class="p">:</span> <span class="p">{</span>
+      <span class="k">"sections"</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span>
+          <span class="k">"key"</span><span class="p">:</span> <span class="s">"meeting_info"</span><span class="p">,</span>
+          <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"بيانات الاجتماع"</span><span class="p">,</span>
+          <span class="k">"content"</span><span class="p">:</span> <span class="s ar">"| اليوم والتاريخ | المكان | الوقت |\n| --- | --- | --- |\n| غير مذكور في التسجيل | غير مذكور | غير مذكور |"</span>
+        <span class="p">},</span>
+        <span class="p">{</span> <span class="k">"key"</span><span class="p">:</span> <span class="s">"attendance"</span><span class="p">,</span> <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"الحضور"</span><span class="p">,</span> <span class="k">"content"</span><span class="p">:</span> <span class="s">""</span> <span class="p">},</span>
+        <span class="p">{</span>
+          <span class="k">"key"</span><span class="p">:</span> <span class="s">"introduction"</span><span class="p">,</span>
+          <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"المقدمة"</span><span class="p">,</span>
+          <span class="k">"content"</span><span class="p">:</span> <span class="s ar">"افتتح رئيس المجلس الاجتماع ورحّب بالحضور."</span>
+        <span class="p">},</span>
+        <span class="p">{</span>
+          <span class="k">"key"</span><span class="p">:</span> <span class="s">"agenda"</span><span class="p">,</span>
+          <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"جدول الأعمال"</span><span class="p">,</span>
+          <span class="k">"content"</span><span class="p">:</span> <span class="s ar">"| # | البند |\n| --- | --- |\n| 1 | اعتماد الميزانية السنوية |"</span>
+        <span class="p">},</span>
+        <span class="p">{</span>
+          <span class="k">"key"</span><span class="p">:</span> <span class="s">"main_items"</span><span class="p">,</span>
+          <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"البنود الرئيسية"</span><span class="p">,</span>
+          <span class="k">"content"</span><span class="p">:</span> <span class="s ar">"**1. اعتماد الميزانية السنوية**\n\nاستعرض المجلس الميزانية المقترحة."</span>
+        <span class="p">}</span>
+      <span class="p">]</span>
+    <span class="p">},</span>
+    <span class="k">"decisions"</span><span class="p">:</span> <span class="p">[</span>
+      <span class="p">{</span>
+        <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"اعتماد الميزانية السنوية 2027"</span><span class="p">,</span>
+        <span class="k">"description"</span><span class="p">:</span> <span class="s ar">"اعتماد الميزانية المعروضة خلال الاجتماع."</span><span class="p">,</span>
+        <span class="k">"kind"</span><span class="p">:</span> <span class="s">"RESOLUTION"</span><span class="p">,</span>
+        <span class="k">"type"</span><span class="p">:</span> <span class="s">"FOR_EXECUTION"</span><span class="p">,</span>
+        <span class="k">"agendaItemOrder"</span><span class="p">:</span> <span class="n">1</span><span class="p">,</span>
+        <span class="k">"responsiblePersonName"</span><span class="p">:</span> <span class="n">null</span>
+      <span class="p">},</span>                                       <span class="cm">// no completionDuration on a RESOLUTION</span>
+      <span class="p">{</span>
+        <span class="k">"title"</span><span class="p">:</span> <span class="s ar">"إعداد خطة التنفيذ النهائية"</span><span class="p">,</span>
+        <span class="k">"kind"</span><span class="p">:</span> <span class="s">"ASSIGNMENT"</span><span class="p">,</span>
+        <span class="k">"type"</span><span class="p">:</span> <span class="s">"FOR_EXECUTION"</span><span class="p">,</span>
+        <span class="k">"responsiblePersonName"</span><span class="p">:</span> <span class="s ar">"أحمد علي"</span><span class="p">,</span>
+        <span class="k">"completionDuration"</span><span class="p">:</span> <span class="n">14</span><span class="p">,</span>
+        <span class="k">"completionDurationUnit"</span><span class="p">:</span> <span class="s">"DAYS"</span>
+      <span class="p">}</span>
+    <span class="p">],</span>
+    <span class="k">"generatedAt"</span><span class="p">:</span> <span class="s">"2026-09-07T10:36:10Z"</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre>
+      </div>
+
+      <h3>Rules for <code>content.sections</code></h3>
+      <ul class="plain">
+        <li><code>content</code> is a JSON <strong>object</strong>, never a JSON-encoded string.</li>
+        <li><code>sections</code> is <strong>always exactly these five, in this order</strong>: <code>meeting_info</code>, <code>attendance</code>, <code>introduction</code>, <code>agenda</code>, <code>main_items</code>. Nothing is dropped, nothing else is added — so you can render fixed slots without null-checking the list.</li>
+        <li><code>title</code> is model-generated Arabic prose and <strong>may be <code>""</code></strong>. Key your layout, translations and storage off <code>key</code>, never off <code>title</code>.</li>
+        <li><code>content</code> is Markdown and may be <code>""</code>. An empty section is legitimate — it means the recording never stated it.</li>
+        <li>Decisions never appear inside sections; they are only in the top-level <code>decisions</code> array.</li>
+        <li>Missing facts come back as <code>""</code>, <code>null</code>, or an Arabic &ldquo;not stated&rdquo; line. None of these is a transport error. Persist them as-is — we deliberately do not invent names, dates, attendance or deadlines.</li>
+      </ul>
+
+      <h3>Optional decision keys are <em>omitted</em>, not <code>null</code></h3>
+      <p>This is the difference most likely to bite you, and it differs from the original spec examples. Read these with <code>?.</code> / <code>??</code>, never <code>=== null</code>.</p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Key</th><th>Present when</th></tr></thead>
+          <tbody>
+            <tr><td><code>title</code>, <code>kind</code>, <code>type</code></td><td>Always.</td></tr>
+            <tr><td><code>responsiblePersonName</code></td><td>Always present, but may be <code>null</code>. Always a person's <em>name</em> — never a platform user ID.</td></tr>
+            <tr><td><code>description</code></td><td>Only when the model produced one.</td></tr>
+            <tr><td><code>agendaItemOrder</code></td><td>Only when a positive one-based integer could be inferred.</td></tr>
+            <tr><td><code>completionDuration</code><br><code>completionDurationUnit</code></td><td><strong>Only when <code>kind</code> is <code>ASSIGNMENT</code></strong> (and may be <code>null</code> there). Absent entirely on a <code>RESOLUTION</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code">
+        <div class="cap"><span>TypeScript</span><span>types</span></div>
+<pre><code><span class="k">type</span> MinutesContent <span class="p">= {</span>
+  sections<span class="p">:</span> Array<span class="p">&lt;{</span> key<span class="p">:</span> string<span class="p">;</span> title<span class="p">?:</span> string<span class="p">;</span> content<span class="p">?:</span> string <span class="p">}&gt;;</span>
+<span class="p">};</span>
+
+<span class="k">type</span> GeneratedDecision <span class="p">= {</span>
+  title<span class="p">:</span> string<span class="p">;</span>
+  description<span class="p">?:</span> string<span class="p">;</span>
+  kind<span class="p">:</span> <span class="s">"RESOLUTION"</span> <span class="p">|</span> <span class="s">"ASSIGNMENT"</span><span class="p">;</span>
+  type<span class="p">:</span> <span class="s">"FOR_EXECUTION"</span><span class="p">;</span>
+  agendaItemOrder<span class="p">?:</span> number<span class="p">;</span>
+  responsiblePersonName<span class="p">?:</span> string <span class="p">|</span> <span class="n">null</span><span class="p">;</span>
+  completionDuration<span class="p">?:</span> number <span class="p">|</span> <span class="n">null</span><span class="p">;</span>
+  completionDurationUnit<span class="p">?:</span> <span class="s">"DAYS"</span> <span class="p">|</span> <span class="s">"WEEKS"</span> <span class="p">|</span> <span class="s">"MONTHS"</span> <span class="p">|</span> <span class="n">null</span><span class="p">;</span>
+<span class="p">};</span></code></pre>
+      </div>
+
+      <h3>Reading it too early</h3>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Job state</th><th class="num-col">HTTP</th><th><code>error.code</code></th></tr></thead>
+          <tbody>
+            <tr><td><code>QUEUED</code> / <code>PROCESSING</code></td><td class="num-col">200</td><td><code>MINUTES_NOT_READY</code></td></tr>
+            <tr><td><code>FAILED</code></td><td class="num-col">200</td><td><code>GENERATION_FAILED</code></td></tr>
+            <tr><td>Never submitted</td><td class="num-col">404</td><td><code>NOT_FOUND</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note-box warn">
+        <span class="tag">Check the body, not just the status</span>
+        <p>Reading minutes too early returns <strong><code>200</code> with <code>success: false</code></strong>, not a 4xx. A client that branches on <code>res.ok</code> alone will treat it as a success and read <code>data</code> as undefined. Always check <code>body.success</code>.</p>
+      </div>
+      <p>There is <strong>no transcript</strong> in this response — it is an operations artefact, not part of the contract.</p>
+    </section>
+
+    <!-- ================= ERRORS ================= -->
+    <section id="errors">
+      <h2 class="sec">Error codes</h2>
+      <p class="lede">The first group are HTTP responses to your call. The second group arrive as <code>data.error</code> on a <code>FAILED</code> job — the request itself was fine.</p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Code</th><th class="num-col">HTTP</th><th>When, and what to do</th></tr></thead>
+          <tbody>
+            <tr><td><code>UNAUTHORIZED</code></td><td class="num-col">401</td><td>Missing or wrong bearer token.</td></tr>
+            <tr><td><code>SERVICE_UNAVAILABLE</code></td><td class="num-col">503</td><td>API restarting or misconfigured. <strong>Retryable</strong> — back off and repeat the same call. Not a job failure.</td></tr>
+            <tr><td><code>INVALID_VIDEO_URL</code></td><td class="num-col">400</td><td>Malformed URL.</td></tr>
+            <tr><td><code>UNSUPPORTED_LANGUAGE</code></td><td class="num-col">400</td><td><code>language</code> outside <code>ar</code> / <code>auto</code> — in practice, <code>en</code>.</td></tr>
+            <tr><td><code>INVALID_REQUEST</code></td><td class="num-col">422</td><td>Body validation, e.g. a <code>meetingId</code> with illegal characters.</td></tr>
+            <tr><td><code>NOT_FOUND</code></td><td class="num-col">404</td><td>Unknown <code>meetingId</code>.</td></tr>
+            <tr><td><code>REQUEST_FAILED</code></td><td class="num-col">404/405</td><td>Wrong <strong>path</strong> or method — a client bug, not an unknown meeting. <strong>Check this first if every call fails.</strong></td></tr>
+            <tr><td><code>MINUTES_NOT_READY</code></td><td class="num-col">200</td><td>Minutes requested before <code>COMPLETED</code>. Keep polling.</td></tr>
+            <tr><td><code>GENERATION_FAILED</code></td><td class="num-col">200</td><td>Minutes requested for a failed job. Details are on the status route.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Job failure code</th><th>Cause</th></tr></thead>
+          <tbody>
+            <tr><td><code>VIDEO_HOST_NOT_ALLOWED</code></td><td>URL host is not on our allowlist. Almost always a configuration mismatch — tell us the hostname.</td></tr>
+            <tr><td><code>VIDEO_TOO_LARGE</code></td><td>Over 2 GB.</td></tr>
+            <tr><td><code>VIDEO_TOO_LONG</code></td><td>Audio longer than about 3 hours.</td></tr>
+            <tr><td><code>TRANSCRIPTION_FAILED</code></td><td>ASR stage failed — unreadable or silent audio.</td></tr>
+            <tr><td><code>MINUTES_GENERATION_FAILED</code></td><td>Minutes/decisions stage failed.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= CLIENT ================= -->
+    <section id="client">
+      <h2 class="sec">Client implementation</h2>
+      <p class="lede">A correct client, with the four traps already handled: <code>success</code> checked separately from <code>res.ok</code>, <code>503</code> retried, terminal states distinguished, and optional decision keys read safely.</p>
+
+      <div class="code">
+        <div class="cap"><span>TypeScript</span><span>reference client</span></div>
+<pre><code><span class="k">const</span> BASE <span class="p">=</span> process<span class="p">.</span>env<span class="p">.</span>AI_SERVICE_BASE_URL<span class="p">!;</span>
+<span class="k">const</span> KEY  <span class="p">=</span> process<span class="p">.</span>env<span class="p">.</span>AI_SERVICE_API_KEY<span class="p">!;</span>
+<span class="k">const</span> headers <span class="p">= {</span> Authorization<span class="p">:</span> <span class="s">`Bearer ${KEY}`</span><span class="p">,</span> <span class="s">"Content-Type"</span><span class="p">:</span> <span class="s">"application/json"</span> <span class="p">};</span>
+
+<span class="cm">// 503 means "try again shortly", never "this meeting failed".</span>
+<span class="k">async function</span> call<span class="p">(</span>path<span class="p">:</span> string<span class="p">,</span> init<span class="p">?:</span> RequestInit<span class="p">) {</span>
+  <span class="k">for</span> <span class="p">(</span><span class="k">let</span> attempt <span class="p">=</span> <span class="n">0</span><span class="p">;</span> <span class="p">;</span> attempt<span class="p">++) {</span>
+    <span class="k">const</span> res <span class="p">= </span><span class="k">await</span> fetch<span class="p">(</span>BASE <span class="p">+</span> path<span class="p">, {</span> <span class="p">...</span>init<span class="p">,</span> headers <span class="p">});</span>
+    <span class="k">const</span> body <span class="p">= </span><span class="k">await</span> res<span class="p">.</span>json<span class="p">();</span>
+    <span class="k">if</span> <span class="p">(</span>res<span class="p">.</span>status <span class="p">===</span> <span class="n">503</span> <span class="p">&amp;&amp;</span> attempt <span class="p">&lt;</span> <span class="n">5</span><span class="p">) {</span>
+      <span class="k">await</span> sleep<span class="p">(</span><span class="n">2</span> <span class="p">**</span> attempt <span class="p">*</span> <span class="n">1000</span><span class="p">);</span>
+      <span class="k">continue</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> body<span class="p">;</span> <span class="cm">// caller inspects body.success — NOT res.ok</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">export async function</span> generateMinutes<span class="p">(</span>meetingId<span class="p">:</span> string<span class="p">,</span> videoUrl<span class="p">:</span> string<span class="p">) {</span>
+  <span class="k">const</span> submitted <span class="p">= </span><span class="k">await</span> call<span class="p">(</span><span class="s">"/v1/meeting-minutes"</span><span class="p">, {</span>
+    method<span class="p">:</span> <span class="s">"POST"</span><span class="p">,</span>
+    body<span class="p">:</span> JSON<span class="p">.</span>stringify<span class="p">({</span> meetingId<span class="p">,</span> videoUrl<span class="p">,</span> language<span class="p">:</span> <span class="s">"ar"</span> <span class="p">}),</span>
+  <span class="p">});</span>
+  <span class="k">if</span> <span class="p">(!</span>submitted<span class="p">.</span>success<span class="p">) </span><span class="k">throw new</span> Error<span class="p">(</span>submitted<span class="p">.</span>error<span class="p">.</span>code<span class="p">);</span>
+
+  <span class="cm">// Hours, not minutes. Run this in a job queue, never in a request handler.</span>
+  <span class="k">for</span> <span class="p">(;;) {</span>
+    <span class="k">const</span> <span class="p">{</span> data <span class="p">} = </span><span class="k">await</span> call<span class="p">(</span><span class="s">`/v1/meeting-minutes/${meetingId}/status`</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span>data<span class="p">.</span>status <span class="p">===</span> <span class="s">"FAILED"</span><span class="p">) </span><span class="k">throw new</span> Error<span class="p">(</span>data<span class="p">.</span>error<span class="p">.</span>code<span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span>data<span class="p">.</span>status <span class="p">===</span> <span class="s">"COMPLETED"</span><span class="p">) </span><span class="k">break</span><span class="p">;</span>
+    onProgress<span class="p">?.(</span>data<span class="p">.</span>stage<span class="p">,</span> data<span class="p">.</span>progress<span class="p">);</span>
+    <span class="k">await</span> sleep<span class="p">(</span><span class="n">10_000</span><span class="p">);</span>
+  <span class="p">}</span>
+
+  <span class="k">const</span> result <span class="p">= </span><span class="k">await</span> call<span class="p">(</span><span class="s">`/v1/meeting-minutes/${meetingId}`</span><span class="p">);</span>
+  <span class="k">if</span> <span class="p">(!</span>result<span class="p">.</span>success<span class="p">) </span><span class="k">throw new</span> Error<span class="p">(</span>result<span class="p">.</span>error<span class="p">.</span>code<span class="p">);</span>
+
+  <span class="k">return</span> <span class="p">{</span>
+    sections<span class="p">:</span> result<span class="p">.</span>data<span class="p">.</span>content<span class="p">.</span>sections<span class="p">,</span>   <span class="cm">// always the same 5, in order</span>
+    decisions<span class="p">:</span> result<span class="p">.</span>data<span class="p">.</span>decisions<span class="p">.</span>map<span class="p">((</span>d<span class="p">) =&gt; ({</span>
+      <span class="p">...</span>d<span class="p">,</span>
+      <span class="cm">// omitted, not null — normalise once, here</span>
+      ownerName<span class="p">:</span> d<span class="p">.</span>responsiblePersonName <span class="p">??</span> <span class="n">null</span><span class="p">,</span>
+      durationDays<span class="p">:</span> d<span class="p">.</span>completionDurationUnit <span class="p">===</span> <span class="s">"DAYS"</span> <span class="p">?</span> d<span class="p">.</span>completionDuration <span class="p">:</span> <span class="n">null</span><span class="p">,</span>
+    <span class="p">})),</span>
+  <span class="p">};</span>
+<span class="p">}</span></code></pre>
+      </div>
+
+      <div class="code">
+        <div class="cap"><span>curl</span><span>after go-live</span></div>
+<pre><code><span class="k">export</span> AI_SERVICE_BASE_URL<span class="p">=</span>https://minutes.example.com
+<span class="k">export</span> AI_SERVICE_API_KEY<span class="p">=</span><span class="cm">…sent to you separately…</span>
+
+curl -sS <span class="s">"$AI_SERVICE_BASE_URL/v1/meeting-minutes"</span> \
+  -H <span class="s">"Authorization: Bearer $AI_SERVICE_API_KEY"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{"meetingId":"cm123","videoUrl":"https://storage.example.com/board.mp4","language":"ar"}'</span>
+
+curl -sS <span class="s">"$AI_SERVICE_BASE_URL/v1/meeting-minutes/cm123/status"</span> \
+  -H <span class="s">"Authorization: Bearer $AI_SERVICE_API_KEY"</span>
+
+curl -sS <span class="s">"$AI_SERVICE_BASE_URL/v1/meeting-minutes/cm123"</span> \
+  -H <span class="s">"Authorization: Bearer $AI_SERVICE_API_KEY"</span></code></pre>
+      </div>
+    </section>
+
+    <!-- ================= CAPACITY ================= -->
+    <section id="capacity">
+      <h2 class="sec">Capacity &mdash; please design around this</h2>
+      <p class="lede">v1 runs on a small CPU-only VM with no GPU. The speech model and the language model cannot be loaded at the same time, so jobs run <strong>strictly one at a time, first in first out</strong>.</p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>Recording length</th><th class="num-col">Expected wall clock</th><th>Note</th></tr></thead>
+          <tbody>
+            <tr><td>3 minutes</td><td class="num-col">~10–12 min</td><td>Measured on the reference box.</td></tr>
+            <tr><td>60 minutes</td><td class="num-col">~2–5 hours</td><td>Estimated from the same rate.</td></tr>
+            <tr><td>90 minutes</td><td class="num-col">~3–7.5 hours</td><td>A typical board meeting.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ul class="plain">
+        <li>Submit from a background job, never inside a web request.</li>
+        <li>A second meeting submitted while one is running sits at <code>QUEUED</code> for the whole first job. That is expected, not a fault.</li>
+        <li>Tell users &ldquo;minutes will be ready later today&rdquo;, not &ldquo;in a few minutes&rdquo;.</li>
+        <li>Poll every 5–15 seconds. There is no webhook in v1.</li>
+      </ul>
+    </section>
+
+    <!-- ================= NEEDS ================= -->
+    <section id="needs">
+      <h2 class="sec">What we need from you</h2>
+      <p class="lede">Two of these block go-live. Please reply with all three.</p>
+
+      <div class="tw">
+        <table>
+          <thead><tr><th>We need</th><th>Why it matters</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>The exact hostname(s) of your video storage or CDN</strong>, including any redirect target</td>
+              <td>Downloads are denied unless the host is on our allowlist. This is <strong>fail-closed</strong>: if we have the wrong hostname, every single job fails with <code>VIDEO_HOST_NOT_ALLOWED</code>. Blocks go-live.</td>
+            </tr>
+            <tr>
+              <td><strong>How long your signed URLs stay valid</strong></td>
+              <td>We start downloading seconds after the <code>POST</code>, but confirm the window survives a retry. Blocks go-live.</td>
+            </tr>
+            <tr>
+              <td><strong>Written confirmation you accept the capacity above</strong></td>
+              <td>One meeting at a time, hours per meeting. Better to disagree now than after launch.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note-box">
+        <span class="tag">What you get back</span>
+        <p><code>AI_SERVICE_BASE_URL</code> and <code>AI_SERVICE_API_KEY</code>, sent over a secret channel once the box is deployed. Treat the key as a credential: environment variable or secret manager, never committed, never in a browser bundle.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Meeting Minutes AI Service &middot; v1 contract &middot; 9 September 2026. This document is the client specification — it reflects what the service actually does, verified against 34 automated conformance checks, and supersedes the English examples in the original integration spec.</p>
+    <p>Questions, or anything here that does not match what you observe once you are live: come back to us rather than working around it.</p>
+  </footer>
+
+</div>

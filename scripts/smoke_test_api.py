@@ -33,6 +33,7 @@ import argparse
 import http.server
 import json
 import os
+import re
 import socketserver
 import sys
 import threading
@@ -45,6 +46,17 @@ import httpx
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SECTION_KEYS = ["meeting_info", "attendance", "introduction", "agenda", "main_items"]
 TERMINAL = {"COMPLETED", "FAILED"}
+STATUSES = {"QUEUED", "PROCESSING", "COMPLETED", "FAILED"}
+STAGES = {"QUEUED", "TRANSCRIBING", "GENERATING_MINUTES", "COMPLETED"}
+DURATION_UNITS = {"DAYS", "WEEKS", "MONTHS"}
+# "All timestamps use ISO 8601 UTC, for example 2026-09-07T10:30:00Z"
+ISO_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
+# "The AI must not generate voting results, status, internal user IDs, or
+# database IDs." Anything resembling these leaking into a decision is a defect.
+FORBIDDEN_DECISION_KEYS = {
+    "id", "_id", "dbId", "databaseId", "userId", "user_id", "responsiblePersonId",
+    "status", "votes", "votingResult", "votingResults", "vote",
+}
 
 
 def load_dotenv(path: Path = REPO_ROOT / ".env") -> None:
@@ -150,7 +162,27 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "smoke-out")
     parser.add_argument("--full", action="store_true",
                         help="print whole sections instead of the first 600 chars")
+    parser.add_argument("--local", action="store_true",
+                        help="start a throwaway local stack (stubbed models), test it, "
+                             "then shut it down -- no server, no second terminal")
     args = parser.parse_args()
+
+    stack = None
+    if args.local:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            from dev_stack import free_port, start_stack
+        except ImportError as exc:
+            print(f"--local needs scripts/dev_stack.py: {exc}", file=sys.stderr)
+            return 2
+        try:
+            stack = start_stack(port=free_port())
+        except ImportError as exc:
+            print(f'--local needs the API extra: pip install -e ".[minutes-api]"\n  ({exc})',
+                  file=sys.stderr)
+            return 2
+        args.base_url, args.api_key = stack.base_url, stack.api_key
+        print(f"Local stack up at {stack.base_url} (models STUBBED -- contract only).")
 
     if not args.base_url or not args.api_key:
         missing = [n for n, v in (("AI_SERVICE_BASE_URL", args.base_url),
@@ -291,6 +323,20 @@ def main() -> int:
                 raise SystemExit(1)
             checks.check(status_data.get("progress") == 100, "COMPLETED reports progress 100")
             checks.check(status_data.get("stage") == "COMPLETED", "COMPLETED reports stage COMPLETED")
+            checks.check(status_data.get("status") in STATUSES,
+                         "status is one of the four allowed values",
+                         str(status_data.get("status")))
+            checks.check(status_data.get("stage") in STAGES,
+                         "stage is a closed enum a client can switch on",
+                         str(status_data.get("stage")))
+            progress = status_data.get("progress")
+            checks.check(isinstance(progress, int) and not isinstance(progress, bool)
+                         and 0 <= progress <= 100,
+                         "progress is an integer 0-100", repr(progress))
+            checks.check(bool(ISO_UTC.match(str(status_data.get("updatedAt")))),
+                         "updatedAt is ISO 8601 UTC", str(status_data.get("updatedAt")))
+            checks.check(bool(ISO_UTC.match(str(accepted.get("createdAt")))),
+                         "createdAt is ISO 8601 UTC", str(accepted.get("createdAt")))
 
             # --- 4. minutes ---------------------------------------------
             print("\n4. Minutes")
@@ -303,7 +349,11 @@ def main() -> int:
             data = payload["data"]
             checks.check(data.get("meetingId") == meeting_id, "meetingId matches")
             checks.check(data.get("language") == "ar", "language is ar")
-            checks.check(bool(data.get("generatedAt")), "generatedAt present")
+            checks.check(bool(ISO_UTC.match(str(data.get("generatedAt")))),
+                         "generatedAt is ISO 8601 UTC", str(data.get("generatedAt")))
+            checks.check(isinstance(data.get("content"), dict),
+                         "content is a JSON object, not a JSON-encoded string",
+                         type(data.get("content")).__name__)
 
             sections = data.get("content", {}).get("sections")
             checks.check(isinstance(sections, list), "content.sections is an array")
@@ -312,10 +362,19 @@ def main() -> int:
                          str([s.get("key") for s in sections or []]))
             checks.check(any((s.get("content") or "").strip() for s in sections or []),
                          "at least one section has content")
+            stray = [s.get("key") for s in sections or []
+                     if "decisions" in s or "decision" in (s.get("key") or "")]
+            checks.check(not stray, "decisions are not embedded in content.sections", str(stray))
+            extra_keys = sorted({k for s in sections or [] for k in s} - {"key", "title", "content"})
+            checks.check(not extra_keys,
+                         "sections carry only key/title/content", str(extra_keys))
 
             decisions = data.get("decisions")
             checks.check(isinstance(decisions, list), "decisions is an array")
             shape_ok, detail = True, ""
+            order_ok, order_detail = True, ""
+            unit_ok, unit_detail = True, ""
+            leaked = set()
             for decision in decisions or []:
                 if decision.get("kind") not in {"RESOLUTION", "ASSIGNMENT"}:
                     shape_ok, detail = False, f"bad kind {decision.get('kind')!r}"
@@ -325,7 +384,21 @@ def main() -> int:
                     shape_ok, detail = False, "empty title"
                 if decision.get("kind") == "RESOLUTION" and "completionDuration" in decision:
                     shape_ok, detail = False, "RESOLUTION must omit completionDuration"
+                order = decision.get("agendaItemOrder")
+                if order is not None and not (
+                    isinstance(order, int) and not isinstance(order, bool) and order >= 1
+                ):
+                    order_ok, order_detail = False, f"agendaItemOrder {order!r} is not one-based"
+                unit = decision.get("completionDurationUnit")
+                if unit is not None and unit not in DURATION_UNITS:
+                    unit_ok, unit_detail = False, f"bad unit {unit!r}"
+                leaked |= FORBIDDEN_DECISION_KEYS & set(decision)
             checks.check(shape_ok, "every decision matches the documented shape", detail)
+            checks.check(order_ok, "agendaItemOrder is a one-based integer", order_detail)
+            checks.check(unit_ok, "completionDurationUnit is DAYS/WEEKS/MONTHS", unit_detail)
+            checks.check(not leaked,
+                         "no voting results, status, or internal IDs in decisions",
+                         str(sorted(leaked)))
 
             again = client.get(f"{base}/v1/meeting-minutes/{meeting_id}", headers=auth)
             checks.check(again.json() == payload, "repeat read returns an identical payload")
@@ -394,6 +467,9 @@ def main() -> int:
     finally:
         if server is not None:
             server.shutdown()
+        if stack is not None:
+            stack.stop()
+            print("Local stack stopped.")
 
     print(f"\n{'=' * 60}")
     if checks.failures:
