@@ -338,10 +338,11 @@ a wrong HTTP method — so `error.code` is always safe to read.
 This v1 runs on a **small CPU VM**. ASR and the LLM cannot run at the same time.
 Jobs are **FIFO, one at a time**.
 
-**Measured on the real deployment**: a 3-minute clip takes **16 minutes** end to
-end — about **5.4x the recording length**. Extrapolating: a 1-hour meeting is
-roughly **5.5 hours**, a 90-minute board meeting roughly **8 hours**. Submit from
-a background job, never a web request, and tell users "ready later today". Mixed Arabic/English is supported; minutes are
+**Measured on the real deployment**, five end-to-end runs of the same 3-minute
+clip: **14.5–16.0 minutes**, averaging **15.3** — about **5x the recording
+length**. Extrapolating: a 1-hour meeting is roughly **5 hours**, a 90-minute
+board meeting roughly **7.5–8 hours**. Submit from a background job, never a web
+request, and tell users "ready later today". Mixed Arabic/English is supported; minutes are
 Arabic (`language: "ar"` on GET). English words stay Latin **only if ASR wrote
 them**. The model must not invent names, votes, or user ids.
 

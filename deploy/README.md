@@ -105,7 +105,29 @@ curl http://127.0.0.1:8080/health
 journalctl -u coherex-minutes-api -u coherex-minutes-worker -f
 ```
 
-## 4. TLS and firewall
+## 4. Go live (TLS, firewall, real allowlist)
+
+Everything in this step is scripted, because the pieces have to land together:
+opening 443 while the video allowlist still points at localhost would turn
+`videoUrl` into an SSRF probe of the internal network.
+
+```bash
+deploy/go-live.sh minutes.example.com storage.acme.com,cdn.acme.com
+```
+
+The DNS name must already resolve to this box, and the second argument is the
+platform team's storage/CDN hostname(s) including any redirect target. The
+script refuses to proceed if the name does not point here, if a `REPLACE_ME`
+placeholder is still in the env file, if either model server is not bound to
+`127.0.0.1`, or if the SSH firewall rule is missing. It finishes by checking
+`/health` and an unauthenticated request from the public internet, then runs
+the full conformance suite against the public URL.
+
+It is idempotent — re-run it after fixing a mistake.
+
+<details>
+<summary>Doing it by hand instead</summary>
+
 
 Point the chosen DNS name at the VM, install Caddy, replace
 `minutes.example.com` in `Caddyfile.example`, and install it:
@@ -121,6 +143,8 @@ ufw enable
 
 Before enabling the firewall, confirm the SSH allow rule is present from a
 second session. Do **not** allow 8000, 8001, or 8080 publicly.
+
+</details>
 
 ## 5. Smoke test
 
